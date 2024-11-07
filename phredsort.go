@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sort"
 
@@ -14,6 +15,15 @@ import (
 
 const (
 	PHRED_OFFSET = 33
+)
+
+// QualityMetric represents different methods for calculating sequence quality
+type QualityMetric int
+
+const (
+	AvgPhred QualityMetric = iota
+	MaxEE
+	Meep
 )
 
 // QualityRecord stores just the essential info for sorting
@@ -60,13 +70,63 @@ func (list ReversedQualityFloatList) Less(i, j int) bool {
 	return false
 }
 
+var errorProbs [256]float64
+
+func init() {
+	// Pre-compute error probabilities for Phred scores
+	for i := range errorProbs {
+		errorProbs[i] = math.Pow(10, float64(i-PHRED_OFFSET)/-10)
+	}
+}
+
+func calculateQuality(record *fastx.Record, metric QualityMetric) float64 {
+	switch metric {
+	case AvgPhred:
+		return record.Seq.AvgQual(PHRED_OFFSET)
+	case MaxEE:
+		return calculateMaxEE(record.Seq.Qual)
+	case Meep:
+		return calculateMeep(record.Seq.Qual)
+	default:
+		return 0
+	}
+}
+
+func calculateMaxEE(qual []byte) float64 {
+	var sum float64
+	for _, q := range qual {
+		sum += errorProbs[q]
+	}
+	return sum
+}
+
+func calculateMeep(qual []byte) float64 {
+	maxEE := calculateMaxEE(qual)
+	return (maxEE * 100) / float64(len(qual))
+}
+
 func main() {
 	seq.ValidateSeq = false
 
 	inFile := flag.String("in", "", "Input FASTQ file (required, use - for stdin)")
 	outFile := flag.String("out", "", "Output FASTQ file (required)")
 	reverse := flag.Bool("reverse", true, "Sort in descending order")
+	metric := flag.String("metric", "avgphred", "Quality metric (avgphred, maxee, meep)")
 	flag.Parse()
+
+	// Parse quality metric
+	var qualityMetric QualityMetric
+	switch *metric {
+	case "avgphred":
+		qualityMetric = AvgPhred
+	case "maxee":
+		qualityMetric = MaxEE
+	case "meep":
+		qualityMetric = Meep
+	default:
+		fmt.Fprintf(os.Stderr, "Invalid quality metric: %s\n", *metric)
+		os.Exit(1)
+	}
 
 	if *inFile == "" || *outFile == "" {
 		flag.Usage()
@@ -75,11 +135,11 @@ func main() {
 
 	// For stdin, we need to store complete records
 	if *inFile == "-" {
-		sortStdin(*outFile, *reverse)
+		sortStdin(*outFile, *reverse, qualityMetric)
 		return
 	}
 	// For files, use the two-pass approach
-	sortFile(*inFile, *outFile, *reverse)
+	sortFile(*inFile, *outFile, *reverse, qualityMetric)
 }
 
 type FastqRecord struct {
@@ -89,7 +149,7 @@ type FastqRecord struct {
 	AvgQual float64
 }
 
-func sortStdin(outFile string, reverse bool) {
+func sortStdin(outFile string, reverse bool, metric QualityMetric) {
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating reader: %v\n", err)
@@ -113,7 +173,7 @@ func sortStdin(outFile string, reverse bool) {
 		}
 
 		name := string(record.Name)
-		avgQual := record.Seq.AvgQual(PHRED_OFFSET)
+		avgQual := calculateQuality(record, metric)
 
 		// Store complete record
 		sequences[name] = record.Clone()
@@ -142,7 +202,7 @@ func sortStdin(outFile string, reverse bool) {
 	}
 }
 
-func sortFile(inFile, outFile string, reverse bool) {
+func sortFile(inFile, outFile string, reverse bool, metric QualityMetric) {
 	reader, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating reader: %v\n", err)
@@ -166,7 +226,7 @@ func sortFile(inFile, outFile string, reverse bool) {
 		}
 
 		name := string(record.Name)
-		avgQual := record.Seq.AvgQual(PHRED_OFFSET)
+		avgQual := calculateQuality(record, metric)
 
 		qualityScores = append(qualityScores, QualityFloat{Name: name, Value: avgQual})
 		name2offset[name] = currentOffset
