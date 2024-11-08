@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/golang/snappy"
 	"github.com/shenwei356/bio/seq"
 	"github.com/shenwei356/bio/seqio/fastx"
 	"github.com/shenwei356/xopen"
@@ -112,6 +113,7 @@ func main() {
 	outFile := flag.String("out", "", "Output FASTQ file (required)")
 	reverse := flag.Bool("reverse", true, "Sort in descending order")
 	metric := flag.String("metric", "avgphred", "Quality metric (avgphred, maxee, meep)")
+	compress := flag.Bool("compress", true, "Use compression for stdin processing to reduce memory usage")
 	flag.Parse()
 
 	// Parse quality metric
@@ -135,21 +137,20 @@ func main() {
 
 	// For stdin, we need to store complete records
 	if *inFile == "-" {
-		sortStdin(*outFile, *reverse, qualityMetric)
+		sortStdin(*outFile, *reverse, qualityMetric, *compress)
 		return
 	}
 	// For files, use the two-pass approach
 	sortFile(*inFile, *outFile, *reverse, qualityMetric)
 }
 
-type FastqRecord struct {
+type CompressedFastqRecord struct {
 	Name    []byte
-	Seq     []byte
-	Qual    []byte
+	Data    []byte // Compressed sequence and quality scores
 	AvgQual float64
 }
 
-func sortStdin(outFile string, reverse bool, metric QualityMetric) {
+func sortStdin(outFile string, reverse bool, metric QualityMetric, compress bool) {
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating reader: %v\n", err)
@@ -157,9 +158,76 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric) {
 	}
 	defer reader.Close()
 
-	// Store sequences in a map to maintain association with quality scores
+	var name2avgQual []QualityFloat
+
+	if compress {
+		sequences := make(map[string]*CompressedFastqRecord)
+
+		// Read all records
+		for {
+			record, err := reader.Read()
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				fmt.Fprintf(os.Stderr, "Error reading record: %v\n", err)
+				os.Exit(1)
+			}
+
+			name := string(record.Name)
+			avgQual := calculateQuality(record, metric)
+
+			// Make a copy of the name bytes
+			nameCopy := make([]byte, len(record.Name))
+			copy(nameCopy, record.Name)
+
+			// Compress sequence and quality scores together
+			data := append(record.Seq.Seq, record.Seq.Qual...)
+			compressed := snappy.Encode(nil, data)
+			sequences[name] = &CompressedFastqRecord{
+				Name:    nameCopy,
+				Data:    compressed,
+				AvgQual: avgQual,
+			}
+			name2avgQual = append(name2avgQual, QualityFloat{Name: name, Value: avgQual})
+		}
+
+		// Sort records
+		if reverse {
+			sort.Sort(ReversedQualityFloatList{QualityFloatList(name2avgQual)})
+		} else {
+			sort.Sort(QualityFloatList(name2avgQual))
+		}
+
+		// Write sorted records
+		outfh, err := xopen.Wopen(outFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
+			os.Exit(1)
+		}
+		defer outfh.Close()
+
+		// Output in sorted order
+		for _, kv := range name2avgQual {
+			compRecord := sequences[kv.Name]
+			decompressed, err := snappy.Decode(nil, compRecord.Data)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error decompressing record: %v\n", err)
+				os.Exit(1)
+			}
+
+			seqLen := len(decompressed) / 2
+			record := &fastx.Record{
+				Name: compRecord.Name,
+				Seq: &seq.Seq{
+					Seq:  decompressed[:seqLen],
+					Qual: decompressed[seqLen:],
+				},
+			}
+			record.FormatToWriter(outfh, 0)
+		}
+	} else {
 	sequences := make(map[string]*fastx.Record)
-	name2avgQual := []QualityFloat{}
 
 	// Read all records
 	for {
@@ -175,12 +243,12 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric) {
 		name := string(record.Name)
 		avgQual := calculateQuality(record, metric)
 
-		// Store complete record
+			// Important: Clone the record to avoid reference issues
 		sequences[name] = record.Clone()
 		name2avgQual = append(name2avgQual, QualityFloat{Name: name, Value: avgQual})
 	}
 
-	// Sort by average quality
+		// Sort records
 	if reverse {
 		sort.Sort(ReversedQualityFloatList{QualityFloatList(name2avgQual)})
 	} else {
@@ -199,6 +267,7 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric) {
 	for _, kv := range name2avgQual {
 		record := sequences[kv.Name]
 		record.FormatToWriter(outfh, 0)
+		}
 	}
 }
 
