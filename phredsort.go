@@ -8,7 +8,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
 	"github.com/shenwei356/bio/seq"
 	"github.com/shenwei356/bio/seqio/fastx"
 	"github.com/shenwei356/xopen"
@@ -113,8 +113,14 @@ func main() {
 	outFile := flag.String("out", "", "Output FASTQ file (required)")
 	reverse := flag.Bool("reverse", true, "Sort in descending order")
 	metric := flag.String("metric", "avgphred", "Quality metric (avgphred, maxee, meep)")
-	compress := flag.Bool("compress", true, "Use compression for stdin processing to reduce memory usage")
+	compLevel := flag.Int("compress", 0, "ZSTD compression level (0=disabled, 1-22)")
 	flag.Parse()
+
+	// Validate compression level
+	if *compLevel < 0 || *compLevel > 22 {
+		fmt.Fprintf(os.Stderr, "Invalid compression level: %d (must be 0-22)\n", *compLevel)
+		os.Exit(1)
+	}
 
 	// Parse quality metric
 	var qualityMetric QualityMetric
@@ -137,7 +143,7 @@ func main() {
 
 	// For stdin, we need to store complete records
 	if *inFile == "-" {
-		sortStdin(*outFile, *reverse, qualityMetric, *compress)
+		sortStdin(*outFile, *reverse, qualityMetric, *compLevel)
 		return
 	}
 	// For files, use the two-pass approach
@@ -146,11 +152,11 @@ func main() {
 
 type CompressedFastqRecord struct {
 	Name    []byte
-	Data    []byte // Compressed sequence and quality scores
+	Data    []byte
 	AvgQual float64
 }
 
-func sortStdin(outFile string, reverse bool, metric QualityMetric, compress bool) {
+func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int) {
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating reader: %v\n", err)
@@ -160,10 +166,32 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compress bool
 
 	var name2avgQual []QualityFloat
 
-	if compress {
+	// Create output file handle at the beginning
+	outfh, err := xopen.Wopen(outFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
+		os.Exit(1)
+	}
+	defer outfh.Close()
+
+	if compLevel > 0 {
+		encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(compLevel)))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating ZSTD encoder: %v\n", err)
+			os.Exit(1)
+		}
+		defer encoder.Close()
+
+		decoder, err := zstd.NewReader(nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating ZSTD decoder: %v\n", err)
+			os.Exit(1)
+		}
+		defer decoder.Close()
+
 		sequences := make(map[string]*CompressedFastqRecord)
 
-		// Read all records
+		// Reading records
 		for {
 			record, err := reader.Read()
 			if err != nil {
@@ -177,13 +205,13 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compress bool
 			name := string(record.Name)
 			avgQual := calculateQuality(record, metric)
 
-			// Make a copy of the name bytes
 			nameCopy := make([]byte, len(record.Name))
 			copy(nameCopy, record.Name)
 
 			// Compress sequence and quality scores together
 			data := append(record.Seq.Seq, record.Seq.Qual...)
-			compressed := snappy.Encode(nil, data)
+			compressed := encoder.EncodeAll(data, make([]byte, 0, len(data)))
+
 			sequences[name] = &CompressedFastqRecord{
 				Name:    nameCopy,
 				Data:    compressed,
@@ -199,18 +227,10 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compress bool
 			sort.Sort(QualityFloatList(name2avgQual))
 		}
 
-		// Write sorted records
-		outfh, err := xopen.Wopen(outFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
-			os.Exit(1)
-		}
-		defer outfh.Close()
-
-		// Output in sorted order
+		// Writing records
 		for _, kv := range name2avgQual {
 			compRecord := sequences[kv.Name]
-			decompressed, err := snappy.Decode(nil, compRecord.Data)
+			decompressed, err := decoder.DecodeAll(compRecord.Data, nil)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error decompressing record: %v\n", err)
 				os.Exit(1)
