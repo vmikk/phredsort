@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -12,6 +11,7 @@ import (
 	"github.com/shenwei356/bio/seq"
 	"github.com/shenwei356/bio/seqio/fastx"
 	"github.com/shenwei356/xopen"
+	flag "github.com/spf13/pflag"
 )
 
 const (
@@ -109,11 +109,11 @@ func calculateMeep(qual []byte) float64 {
 func main() {
 	seq.ValidateSeq = false
 
-	inFile := flag.String("in", "", "Input FASTQ file (required, use - for stdin)")
-	outFile := flag.String("out", "", "Output FASTQ file (required)")
-	reverse := flag.Bool("reverse", true, "Sort in descending order")
-	metric := flag.String("metric", "avgphred", "Quality metric (avgphred, maxee, meep)")
-	compLevel := flag.Int("compress", 0, "ZSTD compression level (0=disabled, 1-22)")
+	inFile := flag.StringP("in", "i", "", "Input FASTQ file (required, use - for stdin)")
+	outFile := flag.StringP("out", "o", "", "Output FASTQ file (required)")
+	reverse := flag.BoolP("reverse", "r", true, "Sort in descending order")
+	metric := flag.StringP("metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
+	compLevel := flag.IntP("compress", "c", 0, "ZSTD compression level (0=disabled, 1-22)")
 	flag.Parse()
 
 	// Validate compression level
