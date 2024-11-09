@@ -138,6 +138,7 @@ func main() {
   %s
 
 %s
+%s
   %s
   %s
   %s
@@ -152,7 +153,7 @@ func main() {
   %s
 
 `,
-			bold(cyan("⣿⣶⣦⣄⣀ phredsort")+" - Sort FASTQ based on different sequence quality metrics"),
+			bold(cyan("⣿⣶⣦⣄⣀ phredsort")+" v."+VERSION+" - Sorts FASTQ based on different sequence quality metrics"),
 			bold(yellow("Quality metrics:")),
 			cyan("avgphred")+": average Phred quality score",
 			cyan("maxee")+":    maximum expected error (absolute number)",
@@ -166,12 +167,12 @@ func main() {
 			cyan("-v, --version")+"          : Show version information",
 			bold(yellow("Usage examples:")),
 			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
-			cyan("cat input.fq | phredsort -i - -o - > sorted.fq"))
+			cyan("cat input.fq | phredsort --compress 1 -i - -o - > sorted.fq"))
 	}
 
 	rootCmd := &cobra.Command{
 		Use:   "phredsort",
-		Short: bold("Sort FASTQ files by quality metrics"),
+		Short: bold("Sorts FASTQ files by quality metrics"),
 		Run: func(cmd *cobra.Command, args []string) {
 			// Check version flag first
 			if version {
