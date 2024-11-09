@@ -7,6 +7,8 @@ import (
 	"os"
 	"sort"
 
+	"github.com/fatih/color"
+
 	"github.com/klauspost/compress/zstd"
 	"github.com/shenwei356/bio/seq"
 	"github.com/shenwei356/bio/seqio/fastx"
@@ -106,6 +108,14 @@ func calculateMeep(qual []byte) float64 {
 	return (maxEE * 100) / float64(len(qual))
 }
 
+// Define color functions
+var (
+	bold   = color.New(color.Bold).SprintFunc()
+	cyan   = color.New(color.FgCyan).SprintFunc()
+	yellow = color.New(color.FgYellow).SprintFunc()
+	red    = color.New(color.FgRed).SprintFunc()
+)
+
 func main() {
 	var (
 		inFile    string
@@ -171,7 +181,10 @@ func main() {
 	rootCmd.MarkFlagRequired("in")
 	rootCmd.MarkFlagRequired("out")
 
+	// Custom error handling
 	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, red(err.Error()))
+		fmt.Fprintln(os.Stderr, red("Try 'phredsort --help' for more information"))
 		os.Exit(1)
 	}
 }
@@ -185,7 +198,7 @@ type CompressedFastqRecord struct {
 func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int) {
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating reader: %v\n", err)
+		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
 		os.Exit(1)
 	}
 	defer reader.Close()
@@ -195,7 +208,7 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 	// Create output file handle at the beginning
 	outfh, err := xopen.Wopen(outFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
+		fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
 		os.Exit(1)
 	}
 	defer outfh.Close()
@@ -203,14 +216,14 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 	if compLevel > 0 {
 		encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(compLevel)))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating ZSTD encoder: %v\n", err)
+			fmt.Fprintf(os.Stderr, red("Error creating ZSTD encoder: %v\n"), err)
 			os.Exit(1)
 		}
 		defer encoder.Close()
 
 		decoder, err := zstd.NewReader(nil)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating ZSTD decoder: %v\n", err)
+			fmt.Fprintf(os.Stderr, red("Error creating ZSTD decoder: %v\n"), err)
 			os.Exit(1)
 		}
 		defer decoder.Close()
@@ -220,11 +233,8 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 		// Reading records
 		for {
 			record, err := reader.Read()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				fmt.Fprintf(os.Stderr, "Error reading record: %v\n", err)
+			if err != nil && err != io.EOF {
+				fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 				os.Exit(1)
 			}
 
@@ -258,7 +268,7 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 			compRecord := sequences[kv.Name]
 			decompressed, err := decoder.DecodeAll(compRecord.Data, nil)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error decompressing record: %v\n", err)
+				fmt.Fprintf(os.Stderr, red("Error decompressing record: %v\n"), err)
 				os.Exit(1)
 			}
 
@@ -278,11 +288,8 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 	// Read all records
 	for {
 		record, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			fmt.Fprintf(os.Stderr, "Error reading record: %v\n", err)
+			if err != nil && err != io.EOF {
+				fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 			os.Exit(1)
 		}
 
@@ -304,7 +311,7 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 	// Write sorted records
 	outfh, err := xopen.Wopen(outFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
+			fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
 		os.Exit(1)
 	}
 	defer outfh.Close()
@@ -320,7 +327,7 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 func sortFile(inFile, outFile string, reverse bool, metric QualityMetric) {
 	reader, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating reader: %v\n", err)
+		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
 		os.Exit(1)
 	}
 	defer reader.Close()
@@ -332,11 +339,8 @@ func sortFile(inFile, outFile string, reverse bool, metric QualityMetric) {
 
 	for {
 		record, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			fmt.Fprintf(os.Stderr, "Error reading record: %v\n", err)
+		if err != nil && err != io.EOF {
+			fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 			os.Exit(1)
 		}
 
@@ -358,14 +362,14 @@ func sortFile(inFile, outFile string, reverse bool, metric QualityMetric) {
 	// Second pass: write records in sorted order
 	outfh, err := xopen.Wopen(outFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
+		fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
 		os.Exit(1)
 	}
 	defer outfh.Close()
 
 	reader2, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating second reader: %v\n", err)
+		fmt.Fprintf(os.Stderr, red("Error creating second reader: %v\n"), err)
 		os.Exit(1)
 	}
 	defer reader2.Close()
@@ -375,11 +379,8 @@ func sortFile(inFile, outFile string, reverse bool, metric QualityMetric) {
 	var offset int64 = 0
 	for {
 		record, err := reader2.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			fmt.Fprintf(os.Stderr, "Error reading record: %v\n", err)
+		if err != nil && err != io.EOF {
+			fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 			os.Exit(1)
 		}
 		records[offset] = record.Clone()
@@ -391,7 +392,7 @@ func sortFile(inFile, outFile string, reverse bool, metric QualityMetric) {
 		offset := name2offset[qf.Name]
 		record, ok := records[offset]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "Error: could not find record for %s\n", qf.Name)
+			fmt.Fprintf(os.Stderr, red("Error: could not find record for %s\n"), qf.Name)
 			os.Exit(1)
 		}
 		record.FormatToWriter(outfh, 0)
