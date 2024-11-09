@@ -18,6 +18,7 @@ import (
 
 const (
 	PHRED_OFFSET = 33
+	VERSION      = "0.5.0"
 )
 
 // QualityMetric represents different methods for calculating sequence quality
@@ -120,9 +121,10 @@ func main() {
 	var (
 		inFile    string
 		outFile   string
-		ascending bool
 		metric    string
+		ascending bool
 		compLevel int
+		version   bool
 	)
 
 	// Create custom help function
@@ -161,6 +163,7 @@ func main() {
 			cyan("-m, --metric")+" <string>  : Quality metric (avgphred, maxee, meep) (default, `avgphred`)",
 			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order (default, false)",
 			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22)",
+			cyan("-v, --version")+"          : Show version information",
 			bold(yellow("Usage examples:")),
 			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
 			cyan("cat input.fq | phredsort -i - -o - > sorted.fq"))
@@ -170,11 +173,18 @@ func main() {
 		Use:   "phredsort",
 		Short: bold("Sort FASTQ files by quality metrics"),
 		Run: func(cmd *cobra.Command, args []string) {
+			// Check version flag first
+			if version {
+				fmt.Printf("phredsort version %s\n", VERSION)
+				return
+			}
+
 			// If no arguments are provided, show help
 			if len(args) == 0 && (inFile == "" || outFile == "") {
 				helpFunc(cmd, args)
 				return
 	}
+
 		},
 	}
 
@@ -188,6 +198,7 @@ func main() {
 	flags.StringVarP(&metric, "metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
 	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order (default: descending)")
 	flags.IntVarP(&compLevel, "compress", "c", 0, "Memory compression level for stdin-based mode (0=disabled, 1-22)")
+	flags.BoolVarP(&version, "version", "v", false, "Show version information")
 
 	// Mark required flags
 	rootCmd.MarkFlagRequired("in")
