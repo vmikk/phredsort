@@ -156,11 +156,11 @@ func main() {
 			cyan("maxee")+":    maximum expected error (absolute number)",
 			cyan("meep")+":     maximum expected error (percentage per sequence length)",
 			bold(yellow("Flags:")),
-			cyan("-i, --in")+" <string>     : Input FASTQ file (required, use `-` for stdin)",
-			cyan("-o, --out")+" <string>    : Output FASTQ file (required, use `-` for stdout)",
-			cyan("-r, --reverse")+"         : Sort in descending order (default, true)",
+			cyan("-i, --in")+" <string>      : Input FASTQ file (required, use `-` for stdin)",
+			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use `-` for stdout)",
+			cyan("-m, --metric")+" <string>  : Quality metric (avgphred, maxee, meep) (default, `avgphred`)",
 			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order (default, false)",
-			cyan("-c, --compress")+" <int>  : ZSTD compression level (0=disabled, 1-22)",
+			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22)",
 			bold(yellow("Usage examples:")),
 			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
 			cyan("cat input.fq | phredsort -i - -o - > sorted.fq"))
@@ -187,6 +187,7 @@ func main() {
 	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
 	flags.StringVarP(&metric, "metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
 	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order (default: descending)")
+	flags.IntVarP(&compLevel, "compress", "c", 0, "Memory compression level for stdin-based mode (0=disabled, 1-22)")
 
 	// Mark required flags
 	rootCmd.MarkFlagRequired("in")
