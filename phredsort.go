@@ -120,7 +120,7 @@ func main() {
 	var (
 		inFile    string
 		outFile   string
-		reverse   bool
+		ascending bool
 		metric    string
 		compLevel int
 	)
@@ -159,7 +159,7 @@ func main() {
 			cyan("-i, --in")+" <string>     : Input FASTQ file (required, use `-` for stdin)",
 			cyan("-o, --out")+" <string>    : Output FASTQ file (required, use `-` for stdout)",
 			cyan("-r, --reverse")+"         : Sort in descending order (default, true)",
-			cyan("-m, --metric")+" <string> : Quality metric (avgphred, maxee, meep) (default, `avgphred`)",
+			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order (default, false)",
 			cyan("-c, --compress")+" <int>  : ZSTD compression level (0=disabled, 1-22)",
 			bold(yellow("Usage examples:")),
 			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
@@ -185,9 +185,8 @@ func main() {
 	flags := rootCmd.Flags()
 	flags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
 	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
-	flags.BoolVarP(&reverse, "reverse", "r", true, "Sort in descending order")
 	flags.StringVarP(&metric, "metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
-	flags.IntVarP(&compLevel, "compress", "c", 0, "ZSTD compression level (0=disabled, 1-22)")
+	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order (default: descending)")
 
 	// Mark required flags
 	rootCmd.MarkFlagRequired("in")
@@ -207,7 +206,7 @@ type CompressedFastqRecord struct {
 	AvgQual float64
 }
 
-func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int) {
+func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel int) {
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
@@ -269,10 +268,10 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 		}
 
 		// Sort records
-		if reverse {
-			sort.Sort(ReversedQualityFloatList{QualityFloatList(name2avgQual)})
-		} else {
+		if ascending {
 			sort.Sort(QualityFloatList(name2avgQual))
+		} else {
+			sort.Sort(ReversedQualityFloatList{QualityFloatList(name2avgQual)})
 		}
 
 		// Writing records
@@ -314,10 +313,10 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 	}
 
 		// Sort records
-	if reverse {
+		if ascending {
+			sort.Sort(QualityFloatList(name2avgQual))
+		} else {
 		sort.Sort(ReversedQualityFloatList{QualityFloatList(name2avgQual)})
-	} else {
-		sort.Sort(QualityFloatList(name2avgQual))
 	}
 
 	// Write sorted records
@@ -336,7 +335,7 @@ func sortStdin(outFile string, reverse bool, metric QualityMetric, compLevel int
 	}
 }
 
-func sortFile(inFile, outFile string, reverse bool, metric QualityMetric) {
+func sortFile(inFile, outFile string, ascending bool, metric QualityMetric) {
 	reader, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
@@ -365,10 +364,10 @@ func sortFile(inFile, outFile string, reverse bool, metric QualityMetric) {
 	}
 
 	// Sort by average quality
-	if reverse {
-		sort.Sort(ReversedQualityFloatList{qualityScores})
+	if ascending {
+		sort.Sort(QualityFloatList(qualityScores))
 	} else {
-		sort.Sort(qualityScores)
+		sort.Sort(ReversedQualityFloatList{qualityScores})
 	}
 
 	// Second pass: write records in sorted order
