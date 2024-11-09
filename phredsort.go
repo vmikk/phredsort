@@ -11,7 +11,7 @@ import (
 	"github.com/shenwei356/bio/seq"
 	"github.com/shenwei356/bio/seqio/fastx"
 	"github.com/shenwei356/xopen"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -107,24 +107,30 @@ func calculateMeep(qual []byte) float64 {
 }
 
 func main() {
-	seq.ValidateSeq = false
+	var (
+		inFile    string
+		outFile   string
+		reverse   bool
+		metric    string
+		compLevel int
+	)
 
-	inFile := flag.StringP("in", "i", "", "Input FASTQ file (required, use - for stdin)")
-	outFile := flag.StringP("out", "o", "", "Output FASTQ file (required)")
-	reverse := flag.BoolP("reverse", "r", true, "Sort in descending order")
-	metric := flag.StringP("metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
-	compLevel := flag.IntP("compress", "c", 0, "ZSTD compression level (0=disabled, 1-22)")
-	flag.Parse()
-
+	rootCmd := &cobra.Command{
+		Use:   "phredsort",
+		Short: "Sort FASTQ files by quality metrics",
+		Long: `phredsort sorts FASTQ files based on different quality metrics:
+- avgphred: average Phred quality score
+- maxee: maximum expected error
+- meep: maximum expected error percentage`,
+		RunE: func(cmd *cobra.Command, args []string) error {
 	// Validate compression level
-	if *compLevel < 0 || *compLevel > 22 {
-		fmt.Fprintf(os.Stderr, "Invalid compression level: %d (must be 0-22)\n", *compLevel)
-		os.Exit(1)
+			if compLevel < 0 || compLevel > 22 {
+				return fmt.Errorf("invalid compression level: %d (must be 0-22)", compLevel)
 	}
 
 	// Parse quality metric
 	var qualityMetric QualityMetric
-	switch *metric {
+			switch metric {
 	case "avgphred":
 		qualityMetric = AvgPhred
 	case "maxee":
@@ -132,22 +138,42 @@ func main() {
 	case "meep":
 		qualityMetric = Meep
 	default:
-		fmt.Fprintf(os.Stderr, "Invalid quality metric: %s\n", *metric)
-		os.Exit(1)
+				return fmt.Errorf("invalid quality metric: %s", metric)
 	}
 
-	if *inFile == "" || *outFile == "" {
-		flag.Usage()
-		os.Exit(1)
+			if inFile == "" || outFile == "" {
+				return fmt.Errorf("input and output files are required")
 	}
 
 	// For stdin, we need to store complete records
-	if *inFile == "-" {
-		sortStdin(*outFile, *reverse, qualityMetric, *compLevel)
-		return
+			if inFile == "-" {
+				sortStdin(outFile, reverse, qualityMetric, compLevel)
+				return nil
 	}
 	// For files, use the two-pass approach
-	sortFile(*inFile, *outFile, *reverse, qualityMetric)
+			sortFile(inFile, outFile, reverse, qualityMetric)
+			return nil
+		},
+	}
+
+	// Disable flag sorting
+	rootCmd.Flags().SortFlags = false
+
+	// Define flags
+	flags := rootCmd.Flags()
+	flags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
+	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
+	flags.BoolVarP(&reverse, "reverse", "r", true, "Sort in descending order")
+	flags.StringVarP(&metric, "metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
+	flags.IntVarP(&compLevel, "compress", "c", 0, "ZSTD compression level (0=disabled, 1-22)")
+
+	// Mark required flags
+	rootCmd.MarkFlagRequired("in")
+	rootCmd.MarkFlagRequired("out")
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
 
 type CompressedFastqRecord struct {
