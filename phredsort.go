@@ -125,49 +125,61 @@ func main() {
 		compLevel int
 	)
 
+	// Create custom help function
+	helpFunc := func(cmd *cobra.Command, args []string) {
+		fmt.Printf(`
+%s
+
+%s
+  %s
+  %s
+  %s
+
+%s
+  %s
+  %s
+  %s
+  %s
+  %s
+
+%s
+  # File-based mode (reads from a file, lower memory usage)
+  %s
+
+  # Stdin-based mode (reads from stdin, higher memory usage)
+  %s
+
+`,
+			bold(cyan("⣿⣶⣦⣄⣀ phredsort")+" - Sort FASTQ based on different sequence quality metrics"),
+			bold(yellow("Quality metrics:")),
+			cyan("avgphred")+": average Phred quality score",
+			cyan("maxee")+":    maximum expected error (absolute number)",
+			cyan("meep")+":     maximum expected error (percentage per sequence length)",
+			bold(yellow("Flags:")),
+			cyan("-i, --in")+" <string>     : Input FASTQ file (required, use `-` for stdin)",
+			cyan("-o, --out")+" <string>    : Output FASTQ file (required, use `-` for stdout)",
+			cyan("-r, --reverse")+"         : Sort in descending order (default, true)",
+			cyan("-m, --metric")+" <string> : Quality metric (avgphred, maxee, meep) (default, `avgphred`)",
+			cyan("-c, --compress")+" <int>  : ZSTD compression level (0=disabled, 1-22)",
+			bold(yellow("Usage examples:")),
+			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
+			cyan("cat input.fq | phredsort -i - -o - > sorted.fq"))
+	}
+
 	rootCmd := &cobra.Command{
 		Use:   "phredsort",
-		Short: "Sort FASTQ files by quality metrics",
-		Long: `phredsort sorts FASTQ files based on different quality metrics:
-- avgphred: average Phred quality score
-- maxee: maximum expected error
-- meep: maximum expected error percentage`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-	// Validate compression level
-			if compLevel < 0 || compLevel > 22 {
-				return fmt.Errorf("invalid compression level: %d (must be 0-22)", compLevel)
+		Short: bold("Sort FASTQ files by quality metrics"),
+		Run: func(cmd *cobra.Command, args []string) {
+			// If no arguments are provided, show help
+			if len(args) == 0 && (inFile == "" || outFile == "") {
+				helpFunc(cmd, args)
+				return
 	}
-
-	// Parse quality metric
-	var qualityMetric QualityMetric
-			switch metric {
-	case "avgphred":
-		qualityMetric = AvgPhred
-	case "maxee":
-		qualityMetric = MaxEE
-	case "meep":
-		qualityMetric = Meep
-	default:
-				return fmt.Errorf("invalid quality metric: %s", metric)
-	}
-
-			if inFile == "" || outFile == "" {
-				return fmt.Errorf("input and output files are required")
-	}
-
-	// For stdin, we need to store complete records
-			if inFile == "-" {
-				sortStdin(outFile, reverse, qualityMetric, compLevel)
-				return nil
-	}
-	// For files, use the two-pass approach
-			sortFile(inFile, outFile, reverse, qualityMetric)
-			return nil
 		},
 	}
 
-	// Disable flag sorting
-	rootCmd.Flags().SortFlags = false
+	// Set the help function
+	rootCmd.SetHelpFunc(helpFunc)
 
 	// Define flags
 	flags := rootCmd.Flags()
