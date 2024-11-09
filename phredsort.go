@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/fatih/color"
 
@@ -117,6 +118,26 @@ var (
 	red    = color.New(color.FgRed).SprintFunc()
 )
 
+func getColorizedLogo() string {
+	symbols := []rune{'⣿', '⣶', '⣦', '⣄', '⣀'}
+	var logo strings.Builder
+
+	// Create gradient by assigning specific green intensities to each symbol
+	colors := []struct{ r, g, b int }{
+		{0, 255, 0}, // Brightest green
+		{0, 204, 0},
+		{0, 153, 0},
+		{0, 102, 0},
+		{0, 51, 0}, // Darkest green
+	}
+
+	for i, symbol := range symbols {
+		logo.WriteString(color.RGB(colors[i].r, colors[i].g, colors[i].b).Sprint(string(symbol)))
+	}
+
+	return logo.String()
+}
+
 func main() {
 	var (
 		inFile    string
@@ -153,7 +174,7 @@ func main() {
   %s
 
 `,
-			bold(cyan("⣿⣶⣦⣄⣀ phredsort")+" v."+VERSION+" - Sorts FASTQ based on different sequence quality metrics"),
+			bold(getColorizedLogo()+" phredsort v."+VERSION+" - Sorts FASTQ based on different sequence quality metrics"),
 			bold(yellow("Quality metrics:")),
 			cyan("avgphred")+": average Phred quality score",
 			cyan("maxee")+":    maximum expected error (absolute number)",
