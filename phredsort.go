@@ -197,18 +197,45 @@ func main() {
 		Use:   "phredsort",
 		Short: bold("Sorts FASTQ files by quality metrics"),
 		Run: func(cmd *cobra.Command, args []string) {
-			// Check version flag first
+			// Check version flag
 			if version {
-				fmt.Printf("phredsort version %s\n", VERSION)
-				return
+				fmt.Printf("phredsort %s\n", VERSION)
+				os.Exit(0)
 			}
 
-			// If no arguments are provided, show help
-			if len(args) == 0 && (inFile == "" || outFile == "") {
-				helpFunc(cmd, args)
-				return
-	}
+			// Check required flags
+			if inFile == "" || outFile == "" {
+				fmt.Fprintln(os.Stderr, red("Error: input and output files are required"))
+				fmt.Fprintln(os.Stderr, red("Try 'phredsort --help' for more information"))
+				os.Exit(1)
+			}
 
+			// Validate metric flag
+			var qualityMetric QualityMetric
+			switch strings.ToLower(metric) {
+			case "avgphred":
+				qualityMetric = AvgPhred
+			case "maxee":
+				qualityMetric = MaxEE
+			case "meep":
+				qualityMetric = Meep
+			default:
+				fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep\n"), metric)
+				os.Exit(1)
+			}
+
+			// Validate compression level
+			if compLevel < 0 || compLevel > 22 {
+				fmt.Fprintln(os.Stderr, red("Error: compression level must be between 0 and 22"))
+				os.Exit(1)
+			}
+
+			// Process the files
+			if inFile == "-" {
+				sortStdin(outFile, ascending, qualityMetric, compLevel)
+			} else {
+				sortFile(inFile, outFile, ascending, qualityMetric)
+			}
 		},
 	}
 
@@ -223,10 +250,6 @@ func main() {
 	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order (default: descending)")
 	flags.IntVarP(&compLevel, "compress", "c", 0, "Memory compression level for stdin-based mode (0=disabled, 1-22)")
 	flags.BoolVarP(&version, "version", "v", false, "Show version information")
-
-	// Mark required flags
-	rootCmd.MarkFlagRequired("in")
-	rootCmd.MarkFlagRequired("out")
 
 	// Custom error handling
 	if err := rootCmd.Execute(); err != nil {
