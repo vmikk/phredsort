@@ -160,6 +160,7 @@ func main() {
 
 %s
 %s
+%s
   %s
   %s
   %s
@@ -185,6 +186,7 @@ func main() {
 			cyan("-m, --metric")+" <string>  : Quality metric (avgphred, maxee, meep) (default, `avgphred`)",
 			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order (default, false)",
 			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22)",
+			cyan("-h, --help")+"             : Show help message",
 			cyan("-v, --version")+"          : Show version information",
 			bold(yellow("Usage examples:")),
 			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
