@@ -84,19 +84,29 @@ func init() {
 	}
 }
 
-func calculateQuality(record *fastx.Record, metric QualityMetric) float64 {
-	switch metric {
-	case AvgPhred:
-		return record.Seq.AvgQual(PHRED_OFFSET)
-	case MaxEE:
-		return calculateMaxEE(record.Seq.Qual)
-	case Meep:
-		return calculateMeep(record.Seq.Qual)
-	default:
-		return 0
+// Calculate average Phred score from quality scores
+// NB. Since Phred scores are logarithmic transformations, we need to:
+// - Convert Phred scores to error probabilities
+// - Calculate the mean error probability
+// - Convert the mean probability back to Phred score
+func calculateAvgPhred(qual []byte) float64 {
+	if len(qual) == 0 {
+		return 0.0
 	}
+
+	// Calculate mean error probability
+	var sumProb float64
+	for _, q := range qual {
+		// Convert Phred to probability using pre-computed errorProbs
+		sumProb += errorProbs[q]
+	}
+	meanProb := sumProb / float64(len(qual))
+
+	// Convert mean probability back to Phred score
+	return -10 * math.Log10(meanProb)
 }
 
+// Calculate maximum expected error (absolute number)
 func calculateMaxEE(qual []byte) float64 {
 	var sum float64
 	for _, q := range qual {
@@ -105,9 +115,23 @@ func calculateMaxEE(qual []byte) float64 {
 	return sum
 }
 
+// Calculate maximum expected error rate (percentage per sequence length)
 func calculateMeep(qual []byte) float64 {
 	maxEE := calculateMaxEE(qual)
 	return (maxEE * 100) / float64(len(qual))
+}
+
+func calculateQuality(record *fastx.Record, metric QualityMetric) float64 {
+	switch metric {
+	case AvgPhred:
+		return calculateAvgPhred(record.Seq.Qual)
+	case MaxEE:
+		return calculateMaxEE(record.Seq.Qual)
+	case Meep:
+		return calculateMeep(record.Seq.Qual)
+	default:
+		return 0
+	}
 }
 
 // Define color functions
