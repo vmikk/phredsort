@@ -198,6 +198,9 @@ func main() {
   # Stdin-based mode (reads from stdin, higher memory usage)
   %s
 
+%s
+  https://github.com/vmikk/phredsort
+
 `,
 			bold(getColorizedLogo()+" phredsort v."+VERSION+" - Sorts FASTQ based on different sequence quality metrics"),
 			bold(yellow("Quality metrics:")),
@@ -214,7 +217,9 @@ func main() {
 			cyan("-v, --version")+"          : Show version information",
 			bold(yellow("Usage examples:")),
 			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
-			cyan("cat input.fq | phredsort --compress 1 -i - -o - > sorted.fq"))
+			cyan("cat input.fq | phredsort --compress 1 -i - -o - > sorted.fq"),
+			bold(yellow("More information:")),
+		)
 	}
 
 	rootCmd := &cobra.Command{
