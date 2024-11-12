@@ -84,30 +84,8 @@ func init() {
 	}
 }
 
-// Calculate average Phred score from quality scores
-// NB. Since Phred scores are logarithmic transformations, we need to:
-// - Convert Phred scores to error probabilities
-// - Calculate the mean error probability
-// - Convert the mean probability back to Phred score
-func calculateAvgPhred(qual []byte) float64 {
-	if len(qual) == 0 {
-		return 0.0
-	}
-
-	// Calculate mean error probability
-	var sumProb float64
-	for _, q := range qual {
-		// Convert Phred to probability using pre-computed errorProbs
-		sumProb += errorProbs[q]
-	}
-	meanProb := sumProb / float64(len(qual))
-
-	// Convert mean probability back to Phred score
-	return -10 * math.Log10(meanProb)
-}
-
-// Calculate maximum expected error (absolute number)
-func calculateMaxEE(qual []byte) float64 {
+// Sum of error probabilities for quality scores
+func sumErrorProbs(qual []byte) float64 {
 	var sum float64
 	for _, q := range qual {
 		sum += errorProbs[q]
@@ -115,12 +93,32 @@ func calculateMaxEE(qual []byte) float64 {
 	return sum
 }
 
-// Calculate maximum expected error rate (percentage per sequence length)
-func calculateMeep(qual []byte) float64 {
-	maxEE := calculateMaxEE(qual)
-	return (maxEE * 100) / float64(len(qual))
+// Average Phred score from quality scores
+func calculateAvgPhred(qual []byte) float64 {
+	if len(qual) == 0 {
+		return 0.0
+	}
+	meanProb := sumErrorProbs(qual) / float64(len(qual))
+	return -10 * math.Log10(meanProb)
 }
 
+// Maximum expected error (absolute number)
+func calculateMaxEE(qual []byte) float64 {
+	if len(qual) == 0 {
+		return math.Inf(1) // Return positive infinity for zero-length sequences
+	}
+	return sumErrorProbs(qual)
+}
+
+// Maximum expected error rate (percentage per sequence length)
+func calculateMeep(qual []byte) float64 {
+	if len(qual) == 0 {
+		return math.Inf(1) // Return positive infinity for zero-length sequences
+	}
+	return (sumErrorProbs(qual) * 100) / float64(len(qual))
+}
+
+// Wrapper function to calculate quality scores
 func calculateQuality(record *fastx.Record, metric QualityMetric) float64 {
 	switch metric {
 	case AvgPhred:
