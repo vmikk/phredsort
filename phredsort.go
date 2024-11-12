@@ -330,7 +330,10 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 		// Reading records
 		for {
 			record, err := reader.Read()
-			if err != nil && err != io.EOF {
+			if err == io.EOF {
+				break // Exit loop when we reach end of file
+			}
+			if err != nil {
 				fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 				os.Exit(1)
 			}
@@ -385,7 +388,10 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 	// Read all records
 	for {
 		record, err := reader.Read()
-			if err != nil && err != io.EOF {
+			if err == io.EOF {
+				break // Exit loop when we reach end of file
+			}
+			if err != nil {
 				fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 			os.Exit(1)
 		}
@@ -436,7 +442,10 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric) {
 
 	for {
 		record, err := reader.Read()
-		if err != nil && err != io.EOF {
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
 			fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 			os.Exit(1)
 		}
@@ -471,12 +480,15 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric) {
 	}
 	defer reader2.Close()
 
-	// Read all records into a map first
+	// Read all records into a map
 	records := make(map[int64]*fastx.Record)
 	var offset int64 = 0
 	for {
 		record, err := reader2.Read()
-		if err != nil && err != io.EOF {
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
 			fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 			os.Exit(1)
 		}
