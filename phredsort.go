@@ -497,6 +497,14 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric) {
 	}
 
 	// Write records in sorted order
+	outfh, err = xopen.Wopen(outFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
+		os.Exit(1)
+	}
+	defer outfh.Close()
+
+	// Output in sorted order
 	for _, qf := range qualityScores {
 		offset := name2offset[qf.Name]
 		record, ok := records[offset]
