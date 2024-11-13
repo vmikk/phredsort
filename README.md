@@ -13,7 +13,7 @@ phredsort -i input.fastq.gz -o output.fastq.gz
 zcat input.fastq.gz | phredsort --in - --out - | less -S
 ```
 
-![phredsort help message](assets/phredsort.png)
+![phredsort help message](assets/phredsort.webp)
 
 
 
