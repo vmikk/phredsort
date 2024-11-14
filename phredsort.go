@@ -39,8 +39,9 @@ type QualityRecord struct {
 
 // QualityFloat is for sorting sequences by quality scores
 type QualityFloat struct {
-	Name  string
-	Value float64
+	Name   string
+	Value  float64
+	Metric QualityMetric
 }
 
 // QualityFloatList is a slice of QualityFloat
@@ -48,14 +49,24 @@ type QualityFloatList []QualityFloat
 
 func (list QualityFloatList) Len() int { return len(list) }
 func (list QualityFloatList) Less(i, j int) bool {
+	metric := list.getMetricFromValue()
+	if metric == MaxEE || metric == Meep {
+		if list[i].Value > list[j].Value {
+			return true
+		}
+		if list[i].Value == list[j].Value {
+			return list[i].Name < list[j].Name
+		}
+		return false
+	} else {
 	if list[i].Value < list[j].Value {
 		return true
 	}
 	if list[i].Value == list[j].Value {
-		// Secondary sort by name for stable sorting
 		return list[i].Name < list[j].Name
 	}
 	return false
+	}
 }
 func (list QualityFloatList) Swap(i, j int) { list[i], list[j] = list[j], list[i] }
 
@@ -65,14 +76,24 @@ type ReversedQualityFloatList struct {
 }
 
 func (list ReversedQualityFloatList) Less(i, j int) bool {
+	metric := list.QualityFloatList.getMetricFromValue()
+	if metric == MaxEE || metric == Meep {
+		if list.QualityFloatList[i].Value < list.QualityFloatList[j].Value {
+			return true
+		}
+		if list.QualityFloatList[i].Value == list.QualityFloatList[j].Value {
+			return list.QualityFloatList[i].Name < list.QualityFloatList[j].Name
+		}
+		return false
+	} else {
 	if list.QualityFloatList[i].Value > list.QualityFloatList[j].Value {
 		return true
 	}
 	if list.QualityFloatList[i].Value == list.QualityFloatList[j].Value {
-		// Secondary sort by name for stable sorting
 		return list.QualityFloatList[i].Name < list.QualityFloatList[j].Name
 	}
 	return false
+	}
 }
 
 var errorProbs [256]float64
