@@ -374,7 +374,11 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 				Data:    compressed,
 				AvgQual: avgQual,
 			}
-			name2avgQual = append(name2avgQual, QualityFloat{Name: name, Value: avgQual})
+			name2avgQual = append(name2avgQual, QualityFloat{
+				Name:   name,
+				Value:  avgQual,
+				Metric: metric,
+			})
 		}
 
 		// Sort records
@@ -422,7 +426,11 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 
 			// Important: Clone the record to avoid reference issues
 		sequences[name] = record.Clone()
-		name2avgQual = append(name2avgQual, QualityFloat{Name: name, Value: avgQual})
+			name2avgQual = append(name2avgQual, QualityFloat{
+				Name:   name,
+				Value:  avgQual,
+				Metric: metric,
+			})
 	}
 
 		// Sort records
@@ -474,7 +482,11 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric) {
 		name := string(record.Name)
 		avgQual := calculateQuality(record, metric)
 
-		qualityScores = append(qualityScores, QualityFloat{Name: name, Value: avgQual})
+		qualityScores = append(qualityScores, QualityFloat{
+			Name:   name,
+			Value:  avgQual,
+			Metric: metric,
+		})
 		name2offset[name] = currentOffset
 		currentOffset++
 	}
@@ -535,4 +547,12 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric) {
 		}
 		record.FormatToWriter(outfh, 0)
 	}
+}
+
+// Helper function to get metric from QualityFloatList
+func (list QualityFloatList) getMetricFromValue() QualityMetric {
+	if len(list) > 0 {
+		return list[0].Metric
+	}
+	return AvgPhred // Default
 }
