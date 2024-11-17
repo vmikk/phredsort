@@ -22,4 +22,24 @@ process zstd_benchmark {
     """
 }
 
+// File-based benchmarks
+process file_benchmark_compressed {
+    
+    tag "${input.baseName}___filecompressed"
+
+    input:
+        path input
+
+    output:
+        path "done"
+
+    script:
+    """
+    echo "file-mode (compressed)"
+    phredsort --in ${input} --out - > /dev/null
+    touch done
+    """
+}
+
+
 
