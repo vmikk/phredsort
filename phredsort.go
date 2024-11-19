@@ -231,12 +231,12 @@ func main() {
 			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use `-` for stdout)",
 			cyan("-m, --metric")+" <string>  : Quality metric (avgphred, maxee, meep) (default, `avgphred`)",
 			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order (default, false)",
-			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22)",
+			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22; default, 1)",
 			cyan("-h, --help")+"             : Show help message",
 			cyan("-v, --version")+"          : Show version information",
 			bold(yellow("Usage examples:")),
 			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
-			cyan("cat input.fq | phredsort --compress 1 -i - -o - > sorted.fq"),
+			cyan("cat input.fq | phredsort --compress 0 -i - -o - > sorted.fq"),
 			bold(yellow("More information:")),
 		)
 	}
@@ -296,7 +296,7 @@ func main() {
 	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
 	flags.StringVarP(&metric, "metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
 	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order (default: descending)")
-	flags.IntVarP(&compLevel, "compress", "c", 0, "Memory compression level for stdin-based mode (0=disabled, 1-22)")
+	flags.IntVarP(&compLevel, "compress", "c", 1, "Memory compression level for stdin-based mode (0=disabled, 1-22)")
 	flags.BoolVarP(&version, "version", "v", false, "Show version information")
 
 	// Custom error handling
