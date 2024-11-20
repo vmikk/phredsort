@@ -33,7 +33,7 @@ const (
 
 // QualityRecord stores just the essential info for sorting
 type QualityRecord struct {
-	Offset  int64   // File offset for this record
+	Offset  int64   // File offset for a record
 	AvgQual float64 // Average quality score
 }
 
@@ -59,13 +59,13 @@ func (list QualityFloatList) Less(i, j int) bool {
 		}
 		return false
 	} else {
-	if list[i].Value < list[j].Value {
-		return true
-	}
-	if list[i].Value == list[j].Value {
-		return list[i].Name < list[j].Name
-	}
-	return false
+		if list[i].Value < list[j].Value {
+			return true
+		}
+		if list[i].Value == list[j].Value {
+			return list[i].Name < list[j].Name
+		}
+		return false
 	}
 }
 func (list QualityFloatList) Swap(i, j int) { list[i], list[j] = list[j], list[i] }
@@ -86,13 +86,13 @@ func (list ReversedQualityFloatList) Less(i, j int) bool {
 		}
 		return false
 	} else {
-	if list.QualityFloatList[i].Value > list.QualityFloatList[j].Value {
-		return true
-	}
-	if list.QualityFloatList[i].Value == list.QualityFloatList[j].Value {
-		return list.QualityFloatList[i].Name < list.QualityFloatList[j].Name
-	}
-	return false
+		if list.QualityFloatList[i].Value > list.QualityFloatList[j].Value {
+			return true
+		}
+		if list.QualityFloatList[i].Value == list.QualityFloatList[j].Value {
+			return list.QualityFloatList[i].Name < list.QualityFloatList[j].Name
+		}
+		return false
 	}
 }
 
@@ -202,8 +202,8 @@ func main() {
   %s
 
 %s
-%s
-%s
+  %s
+  %s
   %s
   %s
   %s
@@ -230,7 +230,7 @@ func main() {
 			cyan("-i, --in")+" <string>      : Input FASTQ file (required, use `-` for stdin)",
 			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use `-` for stdout)",
 			cyan("-m, --metric")+" <string>  : Quality metric (avgphred, maxee, meep) (default, `avgphred`)",
-			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order (default, false)",
+			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order of quality (default, false)",
 			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22; default, 1)",
 			cyan("-h, --help")+"             : Show help message",
 			cyan("-v, --version")+"          : Show version information",
@@ -295,8 +295,8 @@ func main() {
 	flags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
 	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
 	flags.StringVarP(&metric, "metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
-	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order (default: descending)")
-	flags.IntVarP(&compLevel, "compress", "c", 1, "Memory compression level for stdin-based mode (0=disabled, 1-22)")
+	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order of quality (default: descending)")
+	flags.IntVarP(&compLevel, "compress", "c", 1, "Memory compression level for stdin-based mode (0=disabled, 1-22; default: 1)")
 	flags.BoolVarP(&version, "version", "v", false, "Show version information")
 
 	// Custom error handling
@@ -408,50 +408,50 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 			record.FormatToWriter(outfh, 0)
 		}
 	} else {
-	sequences := make(map[string]*fastx.Record)
+		sequences := make(map[string]*fastx.Record)
 
-	// Read all records
-	for {
-		record, err := reader.Read()
+		// Read all records
+		for {
+			record, err := reader.Read()
 			if err == io.EOF {
 				break // Exit loop when we reach end of file
 			}
 			if err != nil {
 				fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
-			os.Exit(1)
-		}
+				os.Exit(1)
+			}
 
-		name := string(record.Name)
-		avgQual := calculateQuality(record, metric)
+			name := string(record.Name)
+			avgQual := calculateQuality(record, metric)
 
 			// Important: Clone the record to avoid reference issues
-		sequences[name] = record.Clone()
+			sequences[name] = record.Clone()
 			name2avgQual = append(name2avgQual, QualityFloat{
 				Name:   name,
 				Value:  avgQual,
 				Metric: metric,
 			})
-	}
+		}
 
 		// Sort records
 		if ascending {
 			sort.Sort(QualityFloatList(name2avgQual))
 		} else {
-		sort.Sort(ReversedQualityFloatList{QualityFloatList(name2avgQual)})
-	}
+			sort.Sort(ReversedQualityFloatList{QualityFloatList(name2avgQual)})
+		}
 
-	// Write sorted records
-	outfh, err := xopen.Wopen(outFile)
-	if err != nil {
+		// Write sorted records
+		outfh, err := xopen.Wopen(outFile)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
-		os.Exit(1)
-	}
-	defer outfh.Close()
+			os.Exit(1)
+		}
+		defer outfh.Close()
 
-	// Output in sorted order
-	for _, kv := range name2avgQual {
-		record := sequences[kv.Name]
-		record.FormatToWriter(outfh, 0)
+		// Output in sorted order
+		for _, kv := range name2avgQual {
+			record := sequences[kv.Name]
+			record.FormatToWriter(outfh, 0)
 		}
 	}
 }
