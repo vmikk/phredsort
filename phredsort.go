@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
+	"github.com/maruel/natural"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/shenwei356/bio/seq"
@@ -55,7 +56,7 @@ func (list QualityFloatList) Less(i, j int) bool {
 			return true
 		}
 		if list[i].Value == list[j].Value {
-			return list[i].Name < list[j].Name
+			return natural.Less(list[i].Name, list[j].Name)
 		}
 		return false
 	} else {
@@ -63,7 +64,7 @@ func (list QualityFloatList) Less(i, j int) bool {
 			return true
 		}
 		if list[i].Value == list[j].Value {
-			return list[i].Name < list[j].Name
+			return natural.Less(list[i].Name, list[j].Name)
 		}
 		return false
 	}
@@ -82,7 +83,7 @@ func (list ReversedQualityFloatList) Less(i, j int) bool {
 			return true
 		}
 		if list.QualityFloatList[i].Value == list.QualityFloatList[j].Value {
-			return list.QualityFloatList[i].Name < list.QualityFloatList[j].Name
+			return natural.Less(list.QualityFloatList[i].Name, list.QualityFloatList[j].Name)
 		}
 		return false
 	} else {
@@ -90,7 +91,7 @@ func (list ReversedQualityFloatList) Less(i, j int) bool {
 			return true
 		}
 		if list.QualityFloatList[i].Value == list.QualityFloatList[j].Value {
-			return list.QualityFloatList[i].Name < list.QualityFloatList[j].Name
+			return natural.Less(list.QualityFloatList[i].Name, list.QualityFloatList[j].Name)
 		}
 		return false
 	}
