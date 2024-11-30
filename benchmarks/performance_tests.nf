@@ -22,6 +22,27 @@ process zstd_benchmark {
     """
 }
 
+// Snappy benchmark
+process snappy_benchmark {
+    
+    tag "${input.simpleName}___snappy"
+
+    input:
+        path input
+
+    output:
+        path "done"
+
+    script:
+    """
+    echo "stdin-mode with snappy"
+    # NB. notice the older flag format (`-in` and `-out`)
+    zcat ${input} \
+      | phredsort_snappy -in - -out - > /dev/null
+    touch done
+    """
+}
+
 // File-based benchmarks
 process file_benchmark_compressed {
     
