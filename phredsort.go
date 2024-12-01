@@ -20,7 +20,7 @@ import (
 
 const (
 	PHRED_OFFSET = 33
-	VERSION      = "0.5.0"
+	VERSION      = "1.0.0"
 )
 
 // QualityMetric represents different methods for calculating sequence quality
@@ -31,6 +31,20 @@ const (
 	MaxEE
 	Meep
 )
+
+// Add this near the QualityMetric type definition at the top of the file
+func (m QualityMetric) String() string {
+	switch m {
+	case AvgPhred:
+		return "avgphred"
+	case MaxEE:
+		return "maxee"
+	case Meep:
+		return "meep"
+	default:
+		return "unknown"
+	}
+}
 
 // QualityRecord stores just the essential info for sorting
 type QualityRecord struct {
@@ -184,12 +198,13 @@ func getColorizedLogo() string {
 
 func main() {
 	var (
-		inFile    string
-		outFile   string
-		metric    string
-		ascending bool
-		compLevel int
-		version   bool
+		inFile         string
+		outFile        string
+		metric         string
+		ascending      bool
+		compLevel      int
+		version        bool
+		noQualToHeader bool
 	)
 
 	// Create custom help function
@@ -203,6 +218,7 @@ func main() {
   %s
 
 %s
+  %s
   %s
   %s
   %s
@@ -231,6 +247,7 @@ func main() {
 			cyan("-i, --in")+" <string>      : Input FASTQ file (required, use `-` for stdin)",
 			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use `-` for stdout)",
 			cyan("-m, --metric")+" <string>  : Quality metric (avgphred, maxee, meep) (default, `avgphred`)",
+			cyan("-n, --noqual")+" <bool>    : Do not add quality score to sequence header (default, false)",
 			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order of quality (default, false)",
 			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22; default, 1)",
 			cyan("-h, --help")+"             : Show help message",
@@ -281,9 +298,9 @@ func main() {
 
 			// Process the files
 			if inFile == "-" {
-				sortStdin(outFile, ascending, qualityMetric, compLevel)
+				sortStdin(outFile, ascending, qualityMetric, compLevel, noQualToHeader)
 			} else {
-				sortFile(inFile, outFile, ascending, qualityMetric)
+				sortFile(inFile, outFile, ascending, qualityMetric, noQualToHeader)
 			}
 		},
 	}
@@ -296,6 +313,7 @@ func main() {
 	flags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
 	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
 	flags.StringVarP(&metric, "metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
+	flags.BoolVarP(&noQualToHeader, "noqual", "n", false, "Do not add quality score to sequence header (default: false)")
 	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order of quality (default: descending)")
 	flags.IntVarP(&compLevel, "compress", "c", 1, "Memory compression level for stdin-based mode (0=disabled, 1-22; default: 1)")
 	flags.BoolVarP(&version, "version", "v", false, "Show version information")
@@ -314,7 +332,16 @@ type CompressedFastqRecord struct {
 	AvgQual float64
 }
 
-func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel int) {
+func writeRecord(outfh io.Writer, record *fastx.Record, quality float64, addQualToHeader bool, metricName string) {
+	if addQualToHeader {
+		record.Name = append(record.Name, fmt.Sprintf(" %s=%f", metricName, quality)...)
+	}
+
+	writer := outfh.(*xopen.Writer)
+	record.FormatToWriter(writer, 0)
+}
+
+func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel int, noQualToHeader bool) {
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
@@ -406,7 +433,8 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 					Qual: decompressed[seqLen:],
 				},
 			}
-			record.FormatToWriter(outfh, 0)
+			metricName := kv.Metric.String()
+			writeRecord(outfh, record, kv.Value, !noQualToHeader, metricName)
 		}
 	} else {
 		sequences := make(map[string]*fastx.Record)
@@ -452,12 +480,13 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 		// Output in sorted order
 		for _, kv := range name2avgQual {
 			record := sequences[kv.Name]
-			record.FormatToWriter(outfh, 0)
+			metricName := kv.Metric.String()
+			writeRecord(outfh, record, kv.Value, !noQualToHeader, metricName)
 		}
 	}
 }
 
-func sortFile(inFile, outFile string, ascending bool, metric QualityMetric) {
+func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, noQualToHeader bool) {
 	reader, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
@@ -546,7 +575,8 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric) {
 			fmt.Fprintf(os.Stderr, red("Error: could not find record for %s\n"), qf.Name)
 			os.Exit(1)
 		}
-		record.FormatToWriter(outfh, 0)
+		metricName := qf.Metric.String()
+		writeRecord(outfh, record, qf.Value, !noQualToHeader, metricName)
 	}
 }
 
