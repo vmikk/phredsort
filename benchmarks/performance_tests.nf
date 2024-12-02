@@ -62,5 +62,24 @@ process file_benchmark_compressed {
     """
 }
 
+// File-based benchmarks
+process file_benchmark_uncompressed {
+    
+    tag "${input.baseName}___file_uncompressed"
+
+    input:
+        path input
+
+    output:
+        path "done"
+
+    script:
+    """
+    echo "file-mode (uncompressed)"
+    phredsort --in ${input} --out - > /dev/null
+    touch done
+    """
+}
+
 
 
