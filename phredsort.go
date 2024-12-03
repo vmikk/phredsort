@@ -271,6 +271,7 @@ func main() {
 			bold(yellow("Flags:")),
 			cyan("-i, --in")+" <string>      : Input FASTQ file (required, use `-` for stdin)",
 			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use `-` for stdout)",
+			cyan("-s, --metric")+" <string>  : Quality metric (avgphred, maxee, meep, lqcount) (default, `avgphred`)",
 			cyan("-q, --minq")+" <int>       : Quality threshold for `lqcount` metric (default, 15)",
 			cyan("-n, --noqual")+" <bool>    : Do not add quality score to sequence header (default, false)",
 			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order of quality (default, false)",
@@ -339,6 +340,7 @@ func main() {
 	flags := rootCmd.Flags()
 	flags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
 	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
+	flags.StringVarP(&metric, "metric", "s", "avgphred", "Quality metric (avgphred, maxee, meep, lqcount)")
 	flags.IntVarP(&minQual, "minq", "q", DEFAULT_MIN_QUAL, "Quality threshold for lqcount metric")
 	flags.BoolVarP(&noQualToHeader, "noqual", "n", false, "Do not add quality score to sequence header (default: false)")
 	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order of quality (default: descending)")
