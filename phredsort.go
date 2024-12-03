@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	PHRED_OFFSET = 33
-	VERSION      = "1.0.0"
+	VERSION          = "1.1.0"
+	PHRED_OFFSET     = 33
+	DEFAULT_MIN_QUAL = 15 // min Phred score threshold for `lqcount` metric
 )
 
 // QualityMetric represents different methods for calculating sequence quality
@@ -30,6 +31,7 @@ const (
 	AvgPhred QualityMetric = iota
 	MaxEE
 	Meep
+	LQCount
 )
 
 // Add this near the QualityMetric type definition at the top of the file
@@ -41,6 +43,8 @@ func (m QualityMetric) String() string {
 		return "maxee"
 	case Meep:
 		return "meep"
+	case LQCount:
+		return "lqcount"
 	default:
 		return "unknown"
 	}
@@ -154,8 +158,23 @@ func calculateMeep(qual []byte) float64 {
 	return (sumErrorProbs(qual) * 100) / float64(len(qual))
 }
 
+// Count the number of low quality bases
+func countLowQualityBases(qual []byte, minQual int) float64 {
+	if len(qual) == 0 {
+		return math.Inf(1)
+	}
+
+	count := 0
+	for _, q := range qual {
+		if int(q)-PHRED_OFFSET < minQual {
+			count++
+		}
+	}
+	return float64(count)
+}
+
 // Wrapper function to calculate quality scores
-func calculateQuality(record *fastx.Record, metric QualityMetric) float64 {
+func calculateQuality(record *fastx.Record, metric QualityMetric, minQual int) float64 {
 	switch metric {
 	case AvgPhred:
 		return calculateAvgPhred(record.Seq.Qual)
@@ -163,6 +182,8 @@ func calculateQuality(record *fastx.Record, metric QualityMetric) float64 {
 		return calculateMaxEE(record.Seq.Qual)
 	case Meep:
 		return calculateMeep(record.Seq.Qual)
+	case LQCount:
+		return countLowQualityBases(record.Seq.Qual, minQual)
 	default:
 		return 0
 	}
@@ -205,6 +226,7 @@ func main() {
 		compLevel      int
 		version        bool
 		noQualToHeader bool
+		minQual        int
 	)
 
 	// Create custom help function
@@ -213,10 +235,12 @@ func main() {
 %s
 
 %s
+%s
   %s
   %s
   %s
 
+%s
 %s
   %s
   %s
@@ -243,10 +267,11 @@ func main() {
 			cyan("avgphred")+": average Phred quality score",
 			cyan("maxee")+":    maximum expected error (absolute number)",
 			cyan("meep")+":     maximum expected error (percentage per sequence length)",
+			cyan("lqcount")+":  number of bases below quality threshold (default, 15)",
 			bold(yellow("Flags:")),
 			cyan("-i, --in")+" <string>      : Input FASTQ file (required, use `-` for stdin)",
 			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use `-` for stdout)",
-			cyan("-m, --metric")+" <string>  : Quality metric (avgphred, maxee, meep) (default, `avgphred`)",
+			cyan("-q, --minq")+" <int>       : Quality threshold for `lqcount` metric (default, 15)",
 			cyan("-n, --noqual")+" <bool>    : Do not add quality score to sequence header (default, false)",
 			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order of quality (default, false)",
 			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22; default, 1)",
@@ -285,8 +310,10 @@ func main() {
 				qualityMetric = MaxEE
 			case "meep":
 				qualityMetric = Meep
+			case "lqcount":
+				qualityMetric = LQCount
 			default:
-				fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep\n"), metric)
+				fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep, lqcount\n"), metric)
 				os.Exit(1)
 			}
 
@@ -298,9 +325,9 @@ func main() {
 
 			// Process the files
 			if inFile == "-" {
-				sortStdin(outFile, ascending, qualityMetric, compLevel, noQualToHeader)
+				sortStdin(outFile, ascending, qualityMetric, compLevel, noQualToHeader, minQual)
 			} else {
-				sortFile(inFile, outFile, ascending, qualityMetric, noQualToHeader)
+				sortFile(inFile, outFile, ascending, qualityMetric, noQualToHeader, minQual)
 			}
 		},
 	}
@@ -312,7 +339,7 @@ func main() {
 	flags := rootCmd.Flags()
 	flags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
 	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
-	flags.StringVarP(&metric, "metric", "m", "avgphred", "Quality metric (avgphred, maxee, meep)")
+	flags.IntVarP(&minQual, "minq", "q", DEFAULT_MIN_QUAL, "Quality threshold for lqcount metric")
 	flags.BoolVarP(&noQualToHeader, "noqual", "n", false, "Do not add quality score to sequence header (default: false)")
 	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order of quality (default: descending)")
 	flags.IntVarP(&compLevel, "compress", "c", 1, "Memory compression level for stdin-based mode (0=disabled, 1-22; default: 1)")
@@ -341,7 +368,7 @@ func writeRecord(outfh io.Writer, record *fastx.Record, quality float64, addQual
 	record.FormatToWriter(writer, 0)
 }
 
-func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel int, noQualToHeader bool) {
+func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel int, noQualToHeader bool, minQual int) {
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
@@ -388,7 +415,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 			}
 
 			name := string(record.Name)
-			avgQual := calculateQuality(record, metric)
+			avgQual := calculateQuality(record, metric, minQual)
 
 			nameCopy := make([]byte, len(record.Name))
 			copy(nameCopy, record.Name)
@@ -451,7 +478,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 			}
 
 			name := string(record.Name)
-			avgQual := calculateQuality(record, metric)
+			avgQual := calculateQuality(record, metric, minQual)
 
 			// Important: Clone the record to avoid reference issues
 			sequences[name] = record.Clone()
@@ -486,7 +513,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 	}
 }
 
-func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, noQualToHeader bool) {
+func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, noQualToHeader bool, minQual int) {
 	reader, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
@@ -510,7 +537,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, noQu
 		}
 
 		name := string(record.Name)
-		avgQual := calculateQuality(record, metric)
+		avgQual := calculateQuality(record, metric, minQual)
 
 		qualityScores = append(qualityScores, QualityFloat{
 			Name:   name,
