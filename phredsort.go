@@ -524,7 +524,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, noQu
 	defer reader.Close()
 
 	// First pass: collect quality scores and positions
-	qualityScores := QualityFloatList{}
+	var qualityScores []QualityFloat
 	name2offset := make(map[string]int64)
 	var currentOffset int64 = 0
 
