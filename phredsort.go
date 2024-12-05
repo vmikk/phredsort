@@ -63,56 +63,60 @@ type QualityFloat struct {
 	Metric QualityMetric
 }
 
-// QualityFloatList is a slice of QualityFloat
-type QualityFloatList []QualityFloat
+// QualityFloatList is a slice of QualityFloat with sorting direction
+type QualityFloatList struct {
+	items     []QualityFloat
+	ascending bool // true for ascending, false for descending
+}
 
-func (list QualityFloatList) Len() int { return len(list) }
+// New constructor function
+func NewQualityFloatList(items []QualityFloat, ascending bool) QualityFloatList {
+	return QualityFloatList{items: items, ascending: ascending}
+}
+
+func (list QualityFloatList) Len() int { return len(list.items) }
+func (list QualityFloatList) Swap(i, j int) {
+	list.items[i], list.items[j] = list.items[j], list.items[i]
+}
 func (list QualityFloatList) Less(i, j int) bool {
 	metric := list.getMetricFromValue()
-	if metric == MaxEE || metric == Meep {
-		if list[i].Value > list[j].Value {
-			return true
-		}
-		if list[i].Value == list[j].Value {
-			return natural.Less(list[i].Name, list[j].Name)
-		}
-		return false
-	} else {
-		if list[i].Value < list[j].Value {
-			return true
-		}
-		if list[i].Value == list[j].Value {
-			return natural.Less(list[i].Name, list[j].Name)
-		}
-		return false
-	}
-}
-func (list QualityFloatList) Swap(i, j int) { list[i], list[j] = list[j], list[i] }
 
-// ReversedQualityFloatList is for reverse sorting
-type ReversedQualityFloatList struct {
-	QualityFloatList
+	// Compare values based on metric type
+	var result bool
+	if metric == MaxEE || metric == Meep || metric == LQCount {
+		// For these metrics, higher values indicate lower quality
+		if list.items[i].Value != list.items[j].Value {
+			result = list.items[i].Value < list.items[j].Value
+		} else {
+			result = natural.Less(list.items[i].Name, list.items[j].Name)
+		}
+	} else {
+		// For other metrics (e.g., AvgPhred), higher values indicate better quality
+		if list.items[i].Value != list.items[j].Value {
+			result = list.items[i].Value > list.items[j].Value
+		} else {
+			result = natural.Less(list.items[i].Name, list.items[j].Name)
+		}
+	}
+
+	// Flip the result if we want ascending order
+	if list.ascending {
+		return !result
+	}
+	return result
 }
 
-func (list ReversedQualityFloatList) Less(i, j int) bool {
-	metric := list.QualityFloatList.getMetricFromValue()
-	if metric == MaxEE || metric == Meep {
-		if list.QualityFloatList[i].Value < list.QualityFloatList[j].Value {
-			return true
-		}
-		if list.QualityFloatList[i].Value == list.QualityFloatList[j].Value {
-			return natural.Less(list.QualityFloatList[i].Name, list.QualityFloatList[j].Name)
-		}
-		return false
-	} else {
-		if list.QualityFloatList[i].Value > list.QualityFloatList[j].Value {
-			return true
-		}
-		if list.QualityFloatList[i].Value == list.QualityFloatList[j].Value {
-			return natural.Less(list.QualityFloatList[i].Name, list.QualityFloatList[j].Name)
-		}
-		return false
+// Helper function to get metric from QualityFloatList
+func (list QualityFloatList) getMetricFromValue() QualityMetric {
+	if len(list.items) > 0 {
+		return list.items[0].Metric
 	}
+	return AvgPhred // Default
+}
+
+// Helper function to get the underlying items
+func (list QualityFloatList) Items() []QualityFloat {
+	return list.items
 }
 
 var errorProbs [256]float64
@@ -235,13 +239,13 @@ func main() {
 %s
 
 %s
-%s
+  %s
   %s
   %s
   %s
 
 %s
-%s
+  %s
   %s
   %s
   %s
@@ -439,11 +443,9 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 		}
 
 		// Sort records
-		if ascending {
-			sort.Sort(QualityFloatList(name2avgQual))
-		} else {
-			sort.Sort(ReversedQualityFloatList{QualityFloatList(name2avgQual)})
-		}
+		qualityList := NewQualityFloatList(name2avgQual, ascending)
+		sort.Sort(qualityList)
+		name2avgQual = qualityList.Items()
 
 		// Writing records
 		for _, kv := range name2avgQual {
@@ -492,11 +494,9 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 		}
 
 		// Sort records
-		if ascending {
-			sort.Sort(QualityFloatList(name2avgQual))
-		} else {
-			sort.Sort(ReversedQualityFloatList{QualityFloatList(name2avgQual)})
-		}
+		qualityList := NewQualityFloatList(name2avgQual, ascending)
+		sort.Sort(qualityList)
+		name2avgQual = qualityList.Items()
 
 		// Write sorted records
 		outfh, err := xopen.Wopen(outFile)
@@ -551,11 +551,9 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, noQu
 	}
 
 	// Sort by average quality
-	if ascending {
-		sort.Sort(QualityFloatList(qualityScores))
-	} else {
-		sort.Sort(ReversedQualityFloatList{qualityScores})
-	}
+	qualityList := NewQualityFloatList(qualityScores, ascending)
+	sort.Sort(qualityList)
+	qualityScores = qualityList.Items()
 
 	// Second pass: write records in sorted order
 	outfh, err := xopen.Wopen(outFile)
@@ -607,12 +605,4 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, noQu
 		metricName := qf.Metric.String()
 		writeRecord(outfh, record, qf.Value, !noQualToHeader, metricName)
 	}
-}
-
-// Helper function to get metric from QualityFloatList
-func (list QualityFloatList) getMetricFromValue() QualityMetric {
-	if len(list) > 0 {
-		return list[0].Metric
-	}
-	return AvgPhred // Default
 }
