@@ -177,20 +177,36 @@ func countLowQualityBases(qual []byte, minPhred int) float64 {
 	return float64(count)
 }
 
-// Wrapper function to calculate quality scores
+// Define a common type for quality calculator functions
+type QualityCalculator func([]byte, int) float64
+
+// Wrapper functions to standardize the interface
+func avgPhredWrapper(qual []byte, _ int) float64 {
+	return calculateAvgPhred(qual)
+}
+
+func maxEEWrapper(qual []byte, _ int) float64 {
+	return calculateMaxEE(qual)
+}
+
+func meepWrapper(qual []byte, _ int) float64 {
+	return calculateMeep(qual)
+}
+
+// Map of metric types to their calculator functions
+var qualityCalculators = map[QualityMetric]QualityCalculator{
+	AvgPhred: avgPhredWrapper,
+	MaxEE:    maxEEWrapper,
+	Meep:     meepWrapper,
+	LQCount:  countLowQualityBases,
+}
+
+// Replace the existing calculateQuality function with this simplified version
 func calculateQuality(record *fastx.Record, metric QualityMetric, minPhred int) float64 {
-	switch metric {
-	case AvgPhred:
-		return calculateAvgPhred(record.Seq.Qual)
-	case MaxEE:
-		return calculateMaxEE(record.Seq.Qual)
-	case Meep:
-		return calculateMeep(record.Seq.Qual)
-	case LQCount:
-		return countLowQualityBases(record.Seq.Qual, minPhred)
-	default:
-		return 0
+	if calcFunc, exists := qualityCalculators[metric]; exists {
+		return calcFunc(record.Seq.Qual, minPhred)
 	}
+		return 0
 }
 
 // Define color functions
