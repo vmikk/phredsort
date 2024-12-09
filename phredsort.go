@@ -289,6 +289,7 @@ func main() {
   %s
   %s
   %s
+  %s
 
 %s
   %s
@@ -316,15 +317,16 @@ func main() {
 `,
 			bold(getColorizedLogo()+" phredsort v."+VERSION+" - Sorts FASTQ based on different sequence quality metrics"),
 			bold(yellow("Quality metrics:")),
-			cyan("avgphred")+": average Phred quality score",
-			cyan("maxee")+":    maximum expected error (absolute number)",
-			cyan("meep")+":     maximum expected error (percentage per sequence length)",
-			cyan("lqcount")+":  number of bases below quality threshold (default, 15)",
+			cyan("avgphred")+"  : average Phred quality score",
+			cyan("maxee")+"     : maximum expected error (absolute number)",
+			cyan("meep")+"      : maximum expected error (percentage per sequence length)",
+			cyan("lqcount")+"   : number of bases below quality threshold (default, 15)",
+			cyan("lqpercent")+" : percentage of bases below quality threshold",
 			bold(yellow("Flags:")),
 			cyan("-i, --in")+" <string>      : Input FASTQ file (required, use `-` for stdin)",
 			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use `-` for stdout)",
-			cyan("-s, --metric")+" <string>  : Quality metric (avgphred, maxee, meep, lqcount) (default, `avgphred`)",
-			cyan("-p, --minphred")+" <int>   : Quality threshold for `lqcount` metric (default, 15)",
+			cyan("-s, --metric")+" <string>  : Quality metric (avgphred, maxee, meep, lqcount, lqpercent) (default, `avgphred`)",
+			cyan("-p, --minphred")+" <int>   : Quality threshold for `lqcount` and `lqpercent` metrics (default, 15)",
 			cyan("-m, --minqual")+" <float>  : Minimum quality threshold for filtering (optional)",
 			cyan("-M, --maxqual")+" <float>  : Maximum quality threshold for filtering (optional)",
 			cyan("-n, --noqual")+" <bool>    : Do not add quality score to sequence header (default, false)",
