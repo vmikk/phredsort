@@ -21,7 +21,7 @@ import (
 const (
 	VERSION           = "1.2.0"
 	PHRED_OFFSET      = 33
-	DEFAULT_MIN_PHRED = 15 // min Phred score threshold for `lqcount` metric
+	DEFAULT_MIN_PHRED = 15 // min Phred score threshold for `lqcount`  metric
 )
 
 // QualityMetric represents different methods for calculating sequence quality
@@ -32,6 +32,7 @@ const (
 	MaxEE
 	Meep
 	LQCount
+	LQPercent
 )
 
 // Add this near the QualityMetric type definition at the top of the file
@@ -45,6 +46,8 @@ func (m QualityMetric) String() string {
 		return "meep"
 	case LQCount:
 		return "lqcount"
+	case LQPercent:
+		return "lqpercent"
 	default:
 		return "unknown"
 	}
@@ -83,7 +86,7 @@ func (list QualityFloatList) Less(i, j int) bool {
 
 	// Compare values based on metric type
 	var result bool
-	if metric == MaxEE || metric == Meep || metric == LQCount {
+	if metric == MaxEE || metric == Meep || metric == LQCount || metric == LQPercent {
 		// For these metrics, higher values indicate lower quality
 		if list.items[i].Value != list.items[j].Value {
 			result = list.items[i].Value < list.items[j].Value
@@ -177,10 +180,26 @@ func countLowQualityBases(qual []byte, minPhred int) float64 {
 	return float64(count)
 }
 
-// Define a common type for quality calculator functions
+// Calculate the percentage of low quality bases
+func calculateLQPercent(qual []byte, minPhred int) float64 {
+	if len(qual) == 0 {
+		return math.Inf(1)
+	}
+
+	count := 0
+	for _, q := range qual {
+		if int(q)-PHRED_OFFSET < minPhred {
+			count++
+		}
+	}
+	return (float64(count) * 100) / float64(len(qual))
+}
+
+// A common type for quality calculator functions
 type QualityCalculator func([]byte, int) float64
 
 // Wrapper functions to standardize the interface
+// (to have the same signature `func([]byte, int) float64`)
 func avgPhredWrapper(qual []byte, _ int) float64 {
 	return calculateAvgPhred(qual)
 }
@@ -193,12 +212,21 @@ func meepWrapper(qual []byte, _ int) float64 {
 	return calculateMeep(qual)
 }
 
+func lqCountWrapper(qual []byte, minPhred int) float64 {
+	return countLowQualityBases(qual, minPhred)
+}
+
+func lqPercentWrapper(qual []byte, minPhred int) float64 {
+	return calculateLQPercent(qual, minPhred)
+}
+
 // Map of metric types to their calculator functions
 var qualityCalculators = map[QualityMetric]QualityCalculator{
-	AvgPhred: avgPhredWrapper,
-	MaxEE:    maxEEWrapper,
-	Meep:     meepWrapper,
-	LQCount:  countLowQualityBases,
+	AvgPhred:  avgPhredWrapper,
+	MaxEE:     maxEEWrapper,
+	Meep:      meepWrapper,
+	LQCount:   lqCountWrapper,
+	LQPercent: lqPercentWrapper,
 }
 
 // Replace the existing calculateQuality function with this simplified version
@@ -206,7 +234,7 @@ func calculateQuality(record *fastx.Record, metric QualityMetric, minPhred int) 
 	if calcFunc, exists := qualityCalculators[metric]; exists {
 		return calcFunc(record.Seq.Qual, minPhred)
 	}
-		return 0
+	return 0
 }
 
 // Define color functions
@@ -339,8 +367,10 @@ func main() {
 				qualityMetric = Meep
 			case "lqcount":
 				qualityMetric = LQCount
+			case "lqpercent":
+				qualityMetric = LQPercent
 			default:
-				fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep, lqcount\n"), metric)
+				fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent\n"), metric)
 				os.Exit(1)
 			}
 
