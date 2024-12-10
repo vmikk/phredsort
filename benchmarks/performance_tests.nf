@@ -81,5 +81,36 @@ process file_benchmark_uncompressed {
     """
 }
 
+workflow {
+
+    // Channels with input files (repeated N times)
+    ch_fastqgz = Channel.fromList( [ file(params.fastqgz) ] * params.iterations).flatten()
+    ch_fastq   = Channel.fromList( [ file(params.fastq) ] * params.iterations).flatten()
+
+    // ZSTD compression levels
+    ch_zstd_compression = Channel.fromList(params.compression_levels)
+
+    // Preview channels
+    // ch_fastqgz.view()
+    // ch_fastq.view()
+    // ch_zstd_compression.view()
+
+    // Cartesian product of compressed FASTQ files and ZSTD compression levels
+    ch_fastqgz
+      .combine(ch_zstd_compression)
+      .set { ch_zstd_combinations }
+
+    // ch_zstd_combinations.view()
+
+    // Run stdin-based ZSTD benchmarks
+    ch_zstd_combinations | zstd_benchmark
+
+    // Run stdin-based snappy benchmarks
+    ch_fastqgz | snappy_benchmark
+
+    // Run file-based benchmarks
+    ch_fastqgz | file_benchmark_compressed
+    ch_fastq   | file_benchmark_uncompressed
+}
 
 
