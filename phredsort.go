@@ -420,11 +420,18 @@ func main() {
 				os.Exit(1)
 			}
 
+			// Parse header metrics
+			parsedHeaderMetrics, err := parseHeaderMetrics(headerMetrics)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, red(err.Error()))
+				os.Exit(1)
+			}
+
 			// Process the files
 			if inFile == "-" {
-				sortStdin(outFile, ascending, qualityMetric, compLevel, noQualToHeader, minPhred, minQualFilter, maxQualFilter)
+				sortStdin(outFile, ascending, qualityMetric, compLevel, parsedHeaderMetrics, minPhred, minQualFilter, maxQualFilter)
 			} else {
-				sortFile(inFile, outFile, ascending, qualityMetric, noQualToHeader, minPhred, minQualFilter, maxQualFilter)
+				sortFile(inFile, outFile, ascending, qualityMetric, parsedHeaderMetrics, minPhred, minQualFilter, maxQualFilter)
 			}
 		},
 	}
@@ -459,14 +466,40 @@ type CompressedFastqRecord struct {
 	AvgQual float64
 }
 
-func writeRecord(outfh io.Writer, record *fastx.Record, quality float64, addQualToHeader bool, metricName string, minQualFilter float64, maxQualFilter float64) bool {
+func writeRecord(outfh io.Writer, record *fastx.Record, quality float64, headerMetrics []HeaderMetric, metric QualityMetric, minPhred int, minQualFilter float64, maxQualFilter float64) bool {
 	// Skip records that don't meet quality thresholds
 	if quality < minQualFilter || quality > maxQualFilter {
 		return false
 	}
 
-	if addQualToHeader {
-		record.Name = append(record.Name, fmt.Sprintf(" %s=%f", metricName, quality)...)
+	if len(headerMetrics) > 0 {
+		var additions []string
+
+		for _, hm := range headerMetrics {
+			if hm.IsLength {
+				additions = append(additions, fmt.Sprintf("length=%d", len(record.Seq.Seq)))
+			} else {
+				// Calculate the requested metric
+				var metricValue float64
+				switch hm.Name {
+				case "avgphred":
+					metricValue = calculateAvgPhred(record.Seq.Qual)
+				case "maxee":
+					metricValue = calculateMaxEE(record.Seq.Qual)
+				case "meep":
+					metricValue = calculateMeep(record.Seq.Qual)
+				case "lqcount":
+					metricValue = countLowQualityBases(record.Seq.Qual, minPhred)
+				case "lqpercent":
+					metricValue = calculateLQPercent(record.Seq.Qual, minPhred)
+				}
+				additions = append(additions, fmt.Sprintf("%s=%.6f", hm.Name, metricValue))
+			}
+		}
+
+		if len(additions) > 0 {
+			record.Name = append(record.Name, " "+strings.Join(additions, " ")...)
+		}
 	}
 
 	writer := outfh.(*xopen.Writer)
@@ -474,7 +507,7 @@ func writeRecord(outfh io.Writer, record *fastx.Record, quality float64, addQual
 	return true
 }
 
-func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel int, noQualToHeader bool, minPhred int, minQualFilter float64, maxQualFilter float64) {
+func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel int, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64) {
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
@@ -564,8 +597,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 					Qual: decompressed[seqLen:],
 				},
 			}
-			metricName := kv.Metric.String()
-			writeRecord(outfh, record, kv.Value, !noQualToHeader, metricName, minQualFilter, maxQualFilter)
+			writeRecord(outfh, record, kv.Value, headerMetrics, metric, minPhred, minQualFilter, maxQualFilter)
 		}
 	} else {
 		sequences := make(map[string]*fastx.Record)
@@ -609,13 +641,12 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 		// Output in sorted order
 		for _, kv := range name2avgQual {
 			record := sequences[kv.Name]
-			metricName := kv.Metric.String()
-			writeRecord(outfh, record, kv.Value, !noQualToHeader, metricName, minQualFilter, maxQualFilter)
+			writeRecord(outfh, record, kv.Value, headerMetrics, metric, minPhred, minQualFilter, maxQualFilter)
 		}
 	}
 }
 
-func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, noQualToHeader bool, minPhred int, minQualFilter float64, maxQualFilter float64) {
+func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64) {
 	reader, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
@@ -702,7 +733,6 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, noQu
 			fmt.Fprintf(os.Stderr, red("Error: could not find record for %s\n"), qf.Name)
 			os.Exit(1)
 		}
-		metricName := qf.Metric.String()
-		writeRecord(outfh, record, qf.Value, !noQualToHeader, metricName, minQualFilter, maxQualFilter)
+		writeRecord(outfh, record, qf.Value, headerMetrics, metric, minPhred, minQualFilter, maxQualFilter)
 	}
 }
