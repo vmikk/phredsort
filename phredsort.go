@@ -21,7 +21,7 @@ import (
 const (
 	VERSION           = "1.3.0"
 	PHRED_OFFSET      = 33
-	DEFAULT_MIN_PHRED = 15 // min Phred score threshold for `lqcount`  metric
+	DEFAULT_MIN_PHRED = 15 // min Phred score threshold for `lqcount` and `lqpercent` metrics
 )
 
 // QualityMetric represents different methods for calculating sequence quality
