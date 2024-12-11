@@ -691,14 +691,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 	sort.Sort(qualityList)
 	qualityScores = qualityList.Items()
 
-	// Second pass: write records in sorted order
-	outfh, err := xopen.Wopen(outFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
-		os.Exit(1)
-	}
-	defer outfh.Close()
-
+	// Second pass: read all records into memory
 	reader2, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating second reader: %v\n"), err)
@@ -706,7 +699,6 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 	}
 	defer reader2.Close()
 
-	// Read all records into a map
 	records := make(map[int64]*fastx.Record)
 	var offset int64 = 0
 	for {
@@ -722,8 +714,8 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 		offset++
 	}
 
-	// Write records in sorted order
-	outfh, err = xopen.Wopen(outFile)
+	// Open output file and write sorted records
+	outfh, err := xopen.Wopen(outFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
 		os.Exit(1)
