@@ -265,6 +265,44 @@ func getColorizedLogo() string {
 	return logo.String()
 }
 
+// Metrics to add to headers
+type HeaderMetric struct {
+	Name     string
+	IsLength bool
+}
+
+func parseHeaderMetrics(metrics string) ([]HeaderMetric, error) {
+	if metrics == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(metrics, ",")
+	result := make([]HeaderMetric, 0, len(parts))
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+
+		hm := HeaderMetric{Name: p}
+		if p == "length" {
+			hm.IsLength = true
+		} else {
+			// Validate metric name
+			switch p {
+			case "avgphred", "maxee", "meep", "lqcount", "lqpercent":
+				// valid metric
+			default:
+				return nil, fmt.Errorf("invalid header metric: %s", p)
+			}
+		}
+		result = append(result, hm)
+	}
+
+	return result, nil
+}
+
 func main() {
 	var (
 		inFile         string
