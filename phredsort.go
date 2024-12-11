@@ -305,16 +305,16 @@ func parseHeaderMetrics(metrics string) ([]HeaderMetric, error) {
 
 func main() {
 	var (
-		inFile         string
-		outFile        string
-		metric         string
-		ascending      bool
-		compLevel      int
-		version        bool
-		noQualToHeader bool
-		minPhred       int
-		minQualFilter  float64
-		maxQualFilter  float64
+		inFile        string
+		outFile       string
+		metric        string
+		ascending     bool
+		compLevel     int
+		version       bool
+		headerMetrics string
+		minPhred      int
+		minQualFilter float64
+		maxQualFilter float64
 	)
 
 	// Create custom help function
