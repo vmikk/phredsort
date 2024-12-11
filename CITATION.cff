@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+title: "phredsort: a command-line tool for sorting sequences in a FASTQ file by their quality scores"
+type: software
+authors:
+- family-names: "Mikryukov"
+  given-names: "Vladimir"
+  orcid: "https://orcid.org/0000-0003-2786-2690"
+version: 1.3.0
+date-released: 2024-12-11
+url: "https://github.com/vmikk/phredsort"
+license: MIT
+repository-code: "https://github.com/vmikk/phredsort"
