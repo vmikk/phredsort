@@ -349,6 +349,10 @@ func main() {
   # Stdin-based mode (reads from stdin, higher memory usage)
   %s
 
+  # Remove sequences with average Phred quality score below 20, 
+  # add several quality metrics to sequence headers
+  %s
+
 %s
   https://github.com/vmikk/phredsort
 
@@ -375,6 +379,7 @@ func main() {
 			bold(yellow("Usage examples:")),
 			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
 			cyan("cat input.fq | phredsort --compress 0 -i - -o - > sorted.fq"),
+			cyan("phredsort -i inp.fq.gz -o out.fq.gz --metric avgphred --minqual 20 --header avgphred,maxee,lqpercent,length"),
 			bold(yellow("More information:")),
 		)
 	}
