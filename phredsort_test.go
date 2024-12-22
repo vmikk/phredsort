@@ -60,7 +60,7 @@ func TestQualityMetricCalculations(t *testing.T) {
 			qual:     []byte("IIIII"),
 			metric:   MaxEE,
 			minPhred: DEFAULT_MIN_PHRED,
-			want:     0.0001, // Very low error probability
+			want:     0.0005,
 		},
 		{
 			name:     "MaxEE - Empty quality",
@@ -126,7 +126,7 @@ func TestQualityMetricCalculations(t *testing.T) {
 			got := calculateQuality(record, tt.metric, tt.minPhred)
 
 			// Use approximate comparison for floating point values
-			if math.Abs(got-tt.want) > 0.1 {
+			if math.Abs(got-tt.want) > 0.00001 {
 				t.Errorf("calculateQuality() = %v, want %v", got, tt.want)
 			}
 		})
