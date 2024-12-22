@@ -1,4 +1,6 @@
+
 # phredsort
+[![codecov](https://codecov.io/gh/vmikk/phredsort/graph/badge.svg?token=RPMFI9XT67)](https://codecov.io/gh/vmikk/phredsort)
 
 `phredsort` is a command-line tool for sorting sequences in a FASTQ file by their quality scores.
 
