@@ -287,3 +287,106 @@ func TestParseHeaderMetrics(t *testing.T) {
 	}
 }
 
+// Test record writing with quality filters
+func TestWriteRecord(t *testing.T) {
+	tests := []struct {
+		name          string
+		record        *fastx.Record
+		quality       float64
+		minQualFilter float64
+		maxQualFilter float64
+		headerMetrics []HeaderMetric
+		wantWrite     bool
+		wantHeader    string
+	}{
+		{
+			name:          "Quality within bounds",
+			record:        createTestRecord("test1", "ACGT", "IIII"),
+			quality:       30.0,
+			minQualFilter: 20.0,
+			maxQualFilter: 40.0,
+			headerMetrics: []HeaderMetric{
+				{Name: "avgphred", IsLength: false},
+				{Name: "length", IsLength: true},
+			},
+			wantWrite:  true,
+			wantHeader: "test1 avgphred=40.000000 length=4",
+		},
+		{
+			name:          "Quality below minimum",
+			record:        createTestRecord("test2", "ACGT", "$$$$"),
+			quality:       10.0,
+			minQualFilter: 20.0,
+			maxQualFilter: 40.0,
+			wantWrite:     false,
+			wantHeader:    "",
+		},
+		{
+			name:          "Quality above maximum",
+			record:        createTestRecord("test3", "ACGT", "IIII"),
+			quality:       45.0,
+			minQualFilter: 20.0,
+			maxQualFilter: 40.0,
+			wantWrite:     false,
+			wantHeader:    "",
+		},
+		{
+			name:          "No header metrics",
+			record:        createTestRecord("test4", "ACGT", "IIII"),
+			quality:       30.0,
+			minQualFilter: 20.0,
+			maxQualFilter: 40.0,
+			headerMetrics: nil,
+			wantWrite:     true,
+			wantHeader:    "test4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a temporary file for testing
+			tmpfile, err := os.CreateTemp("", "test*.fastq")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(tmpfile.Name())
+			defer tmpfile.Close()
+
+			// Create writer using the temp file
+			writer, err := xopen.Wopen(tmpfile.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer writer.Close()
+
+			// Test writeRecord
+			got := writeRecord(writer, tt.record, tt.quality, tt.headerMetrics, AvgPhred, DEFAULT_MIN_PHRED, tt.minQualFilter, tt.maxQualFilter)
+
+			if got != tt.wantWrite {
+				t.Errorf("writeRecord() = %v, want %v", got, tt.wantWrite)
+			}
+
+			// If the record should be written, verify the header
+			if tt.wantWrite {
+				// Close the writer to ensure all data is written
+				writer.Close()
+
+				// Read the file content
+				content, err := os.ReadFile(tmpfile.Name())
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				// Extract the header from the FASTQ format (first line)
+				lines := strings.Split(string(content), "\n")
+				if len(lines) > 0 {
+					gotHeader := strings.TrimPrefix(lines[0], "@")
+					if gotHeader != tt.wantHeader {
+						t.Errorf("Header = %q, want %q", gotHeader, tt.wantHeader)
+					}
+				}
+			}
+		})
+	}
+}
+
