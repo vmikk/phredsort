@@ -215,3 +215,75 @@ func TestQualityFloatListSorting(t *testing.T) {
 	}
 }
 
+// Test header metric parsing
+func TestParseHeaderMetrics(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []HeaderMetric
+		wantErr bool
+	}{
+		{
+			name:    "Empty string",
+			input:   "",
+			want:    nil,
+			wantErr: false,
+		},
+		{
+			name:  "Valid metrics",
+			input: "avgphred,maxee,length",
+			want: []HeaderMetric{
+				{Name: "avgphred", IsLength: false},
+				{Name: "maxee", IsLength: false},
+				{Name: "length", IsLength: true},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "Invalid metric",
+			input:   "avgphred,invalid,length",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:  "Multiple length metrics",
+			input: "length,avgphred,length",
+			want: []HeaderMetric{
+				{Name: "length", IsLength: true},
+				{Name: "avgphred", IsLength: false},
+				{Name: "length", IsLength: true},
+			},
+			wantErr: false,
+		},
+		{
+			name:  "Whitespace handling",
+			input: " avgphred , maxee , length ",
+			want: []HeaderMetric{
+				{Name: "avgphred", IsLength: false},
+				{Name: "maxee", IsLength: false},
+				{Name: "length", IsLength: true},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "Mixed valid and invalid",
+			input:   "avgphred,invalid1,maxee,invalid2",
+			want:    nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseHeaderMetrics(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseHeaderMetrics() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseHeaderMetrics() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
