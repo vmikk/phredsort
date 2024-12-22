@@ -390,3 +390,29 @@ func TestWriteRecord(t *testing.T) {
 	}
 }
 
+
+// Add test for error probability initialization
+func TestErrorProbabilitiesInit(t *testing.T) {
+	// Test a few key values from the pre-computed errorProbs array
+	tests := []struct {
+		phred byte
+		want  float64
+	}{
+		{33, 1},        // Phred 0  (33 - 33 = 0)
+		{43, 0.1},      // Phred 10 (43 - 33 = 10)
+		{53, 0.01},     // Phred 20 (53 - 33 = 20)
+		{63, 0.001},    // Phred 30 (63 - 33 = 30)
+		{73, 0.0001},   // Phred 40 (73 - 33 = 40)
+		{83, 0.00001},  // Phred 50 (83 - 33 = 50)
+		{93, 0.000001}, // Phred 60 (93 - 33 = 60)
+
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("Phred%d", tt.phred-PHRED_OFFSET), func(t *testing.T) {
+			if got := errorProbs[tt.phred]; math.Abs(got-tt.want) > 1e-10 {
+				t.Errorf("errorProbs[%d] = %v, want %v", tt.phred, got, tt.want)
+			}
+		})
+	}
+}
