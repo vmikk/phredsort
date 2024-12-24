@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"reflect"
@@ -434,6 +435,191 @@ func TestErrorProbabilitiesInit(t *testing.T) {
 		t.Run(fmt.Sprintf("Phred%d", tt.phred-PHRED_OFFSET), func(t *testing.T) {
 			if got := errorProbs[tt.phred]; math.Abs(got-tt.want) > 1e-10 {
 				t.Errorf("errorProbs[%d] = %v, want %v", tt.phred, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSortFile tests the file-based sorting functionality
+func TestSortFile(t *testing.T) {
+	tests := []struct {
+		name          string
+		records       []*fastx.Record
+		metric        QualityMetric
+		ascending     bool
+		headerMetrics []HeaderMetric
+		minPhred      int
+		minQual       float64
+		maxQual       float64
+		wantOrder     []string
+		wantErr       bool
+	}{
+		{
+			name: "Basic sorting by AvgPhred descending",
+			records: []*fastx.Record{
+				createTestRecord("seq1", "ACGT", "IIII"), // Phred 40
+				createTestRecord("seq2", "ACGT", "$$$$"), // Phred 3
+				createTestRecord("seq3", "ACGT", "@@@@"), // Phred 31
+			},
+			metric:    AvgPhred,
+			ascending: false,
+			minPhred:  DEFAULT_MIN_PHRED,
+			minQual:   0.0,         // Allow all quality scores
+			maxQual:   math.Inf(1), // Allow all quality scores
+			wantOrder: []string{"seq1", "seq3", "seq2"},
+		},
+		{
+			name: "MaxEE ascending with quality filters",
+			records: []*fastx.Record{
+				createTestRecord("seq1", "ACGT", "IIII"), // Very low MaxEE
+				createTestRecord("seq2", "ACGT", "$$$$"), // Very high MaxEE
+				createTestRecord("seq3", "ACGT", "@@@@"), // Medium MaxEE
+			},
+			metric:    MaxEE,
+			ascending: true,
+			minPhred:  DEFAULT_MIN_PHRED,
+			minQual:   0.0,
+			maxQual:   1.0, // Should filter out seq2
+			wantOrder: []string{"seq3", "seq1"},
+		},
+		{
+			name: "LQCount with header metrics",
+			records: []*fastx.Record{
+				createTestRecord("seq1", "ACGT", "III$"),     // 1 low quality out of 4
+				createTestRecord("seq2", "ACGTAA", "$$$$$$"), // all 6 low quality
+				createTestRecord("seq3", "ACGT", "&&&@"),     // 3 low quality out of 4
+			},
+			metric:    LQCount,
+			ascending: false,
+			headerMetrics: []HeaderMetric{
+				{Name: "lqcount", IsLength: false},
+				{Name: "length", IsLength: true},
+			},
+			minPhred:  30,
+			minQual:   0.0,
+			maxQual:   math.Inf(1),
+			wantOrder: []string{"seq1", "seq3", "seq2"},
+		},
+		{
+			name: "Natural sort on equal values",
+			records: []*fastx.Record{
+				createTestRecord("seq2", "ACGT", "IIII"),
+				createTestRecord("seq10", "ACGT", "IIII"),
+				createTestRecord("seq1", "ACGT", "IIII"),
+			},
+			metric:    AvgPhred,
+			ascending: false,
+			minPhred:  DEFAULT_MIN_PHRED,
+			minQual:   0.0,
+			maxQual:   math.Inf(1),
+			wantOrder: []string{"seq1", "seq2", "seq10"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary input and output files
+			inFile, err := os.CreateTemp("", "test_in_*.fastq")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(inFile.Name())
+
+			outFile, err := os.CreateTemp("", "test_out_*.fastq")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(outFile.Name())
+
+			// Write test records to input file
+			writer, err := xopen.Wopen(inFile.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Write records in FASTQ format
+			for _, record := range tt.records {
+				fmt.Fprintf(writer, "@%s\n%s\n+\n%s\n",
+					record.Name,
+					record.Seq.Seq,
+					record.Seq.Qual)
+			}
+			writer.Close()
+
+			// Verify input file was written correctly
+			content, err := os.ReadFile(inFile.Name())
+			if err != nil {
+				t.Fatalf("Failed to read input file: %v", err)
+			}
+			t.Logf("Input file contents:\n%s", string(content))
+
+			// Run sortFile
+			sortFile(
+				inFile.Name(),
+				outFile.Name(),
+				tt.ascending,
+				tt.metric,
+				tt.headerMetrics,
+				tt.minPhred,
+				tt.minQual,
+				tt.maxQual,
+			)
+
+			// Verify output file exists and has content
+			content, err = os.ReadFile(outFile.Name())
+			if err != nil {
+				t.Fatalf("Failed to read output file: %v", err)
+			}
+			t.Logf("Output file contents:\n%s", string(content))
+
+			// Read and verify output
+			reader, err := fastx.NewReader(seq.DNAredundant, outFile.Name(), fastx.DefaultIDRegexp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+
+			var gotOrder []string
+			for {
+				record, err := reader.Read()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Extract just the sequence name without any added metrics
+				name := strings.Split(string(record.Name), " ")[0]
+				gotOrder = append(gotOrder, name)
+			}
+
+			if len(gotOrder) == 0 {
+				t.Error("No records were read from the output file")
+			}
+
+			// Compare the order of sequences
+			if !reflect.DeepEqual(gotOrder, tt.wantOrder) {
+				t.Errorf("sortFile() got order = %v, want %v", gotOrder, tt.wantOrder)
+			}
+
+			// If header metrics were specified, verify they were added correctly
+			if len(tt.headerMetrics) > 0 {
+				reader, _ = fastx.NewReader(seq.DNAredundant, outFile.Name(), fastx.DefaultIDRegexp)
+				record, _ := reader.Read()
+				header := string(record.Name)
+
+				// Check that all requested metrics are present
+				for _, metric := range tt.headerMetrics {
+					if metric.IsLength {
+						if !strings.Contains(header, "length=") {
+							t.Errorf("Header missing length metric: %s", header)
+						}
+					} else {
+						if !strings.Contains(header, metric.Name+"=") {
+							t.Errorf("Header missing metric %s: %s", metric.Name, header)
+						}
+					}
+				}
 			}
 		})
 	}
