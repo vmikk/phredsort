@@ -390,6 +390,28 @@ func TestWriteRecord(t *testing.T) {
 	}
 }
 
+// Test quality metric string representation
+func TestQualityMetricString(t *testing.T) {
+	tests := []struct {
+		metric QualityMetric
+		want   string
+	}{
+		{AvgPhred, "avgphred"},
+		{MaxEE, "maxee"},
+		{Meep, "meep"},
+		{LQCount, "lqcount"},
+		{LQPercent, "lqpercent"},
+		{QualityMetric(999), "unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := tt.metric.String(); got != tt.want {
+				t.Errorf("QualityMetric.String() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 // Add test for error probability initialization
 func TestErrorProbabilitiesInit(t *testing.T) {
