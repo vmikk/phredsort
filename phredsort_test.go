@@ -498,7 +498,7 @@ func TestSortFile(t *testing.T) {
 			minPhred:  30,
 			minQual:   0.0,
 			maxQual:   math.Inf(1),
-			wantOrder: []string{"seq1", "seq3", "seq"},
+			wantOrder: []string{"seq1", "seq3", "seq2"},
 		},
 		{
 			name: "Natural sort on equal values",
