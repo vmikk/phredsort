@@ -1,4 +1,4 @@
-module phredsort
+module github.com/vmikk/phredsort
 
 go 1.23.0
 
