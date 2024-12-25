@@ -546,13 +546,6 @@ func TestSortFile(t *testing.T) {
 			}
 			writer.Close()
 
-			// Verify input file was written correctly
-			content, err := os.ReadFile(inFile.Name())
-			if err != nil {
-				t.Fatalf("Failed to read input file: %v", err)
-			}
-			t.Logf("Input file contents:\n%s", string(content))
-
 			// Run sortFile
 			sortFile(
 				inFile.Name(),
@@ -564,13 +557,6 @@ func TestSortFile(t *testing.T) {
 				tt.minQual,
 				tt.maxQual,
 			)
-
-			// Verify output file exists and has content
-			content, err = os.ReadFile(outFile.Name())
-			if err != nil {
-				t.Fatalf("Failed to read output file: %v", err)
-			}
-			t.Logf("Output file contents:\n%s", string(content))
 
 			// Read and verify output
 			reader, err := fastx.NewReader(seq.DNAredundant, outFile.Name(), fastx.DefaultIDRegexp)
@@ -588,16 +574,33 @@ func TestSortFile(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				// Extract just the sequence name without any added metrics
 				name := strings.Split(string(record.Name), " ")[0]
 				gotOrder = append(gotOrder, name)
+			}
+
+			// Only show file contents if there's a test failure
+			if len(gotOrder) == 0 || !reflect.DeepEqual(gotOrder, tt.wantOrder) {
+				// Read and log input file contents
+				inContent, err := os.ReadFile(inFile.Name())
+				if err != nil {
+					t.Logf("Failed to read input file: %v", err)
+				} else {
+					t.Logf("Input file contents:\n%s", string(inContent))
+				}
+
+				// Read and log output file contents
+				outContent, err := os.ReadFile(outFile.Name())
+				if err != nil {
+					t.Logf("Failed to read output file: %v", err)
+				} else {
+					t.Logf("Output file contents:\n%s", string(outContent))
+				}
 			}
 
 			if len(gotOrder) == 0 {
 				t.Error("No records were read from the output file")
 			}
 
-			// Compare the order of sequences
 			if !reflect.DeepEqual(gotOrder, tt.wantOrder) {
 				t.Errorf("sortFile() got order = %v, want %v", gotOrder, tt.wantOrder)
 			}
