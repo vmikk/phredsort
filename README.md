@@ -20,4 +20,14 @@ zcat input.fastq.gz | phredsort --in - --out - | less -S
 ![phredsort help message](assets/phredsort.webp)
 
 
+## Installation
+
+### Download compiled binary (for Linux)
+
+```bash
+wget https://github.com/vmikk/phredsort/releases/download/1.3.0/phredsort
+chmod +x phredsort
+./phredsort --help
+```
+
 
