@@ -627,3 +627,183 @@ func TestSortFile(t *testing.T) {
 		})
 	}
 }
+
+// TestSortStdin tests the stdin-based sorting functionality
+func TestSortStdin(t *testing.T) {
+	tests := []struct {
+		name          string
+		records       []*fastx.Record
+		metric        QualityMetric
+		ascending     bool
+		compLevel     int
+		headerMetrics []HeaderMetric
+		minPhred      int
+		minQual       float64
+		maxQual       float64
+		wantOrder     []string
+		wantErr       bool
+	}{
+		{
+			name: "Basic sorting with compression",
+			records: []*fastx.Record{
+				createTestRecord("seq1", "ACGT", "IIII"), // Phred 40
+				createTestRecord("seq2", "ACGT", "$$$$"), // Phred 3
+				createTestRecord("seq3", "ACGT", "@@@@"), // Phred 31
+			},
+			metric:    AvgPhred,
+			ascending: false,
+			compLevel: 1,
+			minPhred:  DEFAULT_MIN_PHRED,
+			minQual:   0.0,
+			maxQual:   math.Inf(1),
+			wantOrder: []string{"seq1", "seq3", "seq2"},
+		},
+		{
+			name: "Sorting with quality filters",
+			records: []*fastx.Record{
+				createTestRecord("seq1", "ACGT", "IIII"), // Phred 40
+				createTestRecord("seq2", "ACGT", "$$$$"), // Phred 3
+				createTestRecord("seq3", "ACGT", "@@@@"), // Phred 31
+			},
+			metric:    AvgPhred,
+			ascending: false,
+			compLevel: 0, // No compression
+			minPhred:  DEFAULT_MIN_PHRED,
+			minQual:   30.0,             // Only keep sequences with AvgPhred >= 30
+			maxQual:   35.0,             // Only keep sequences with AvgPhred <= 35
+			wantOrder: []string{"seq3"}, // Only seq3 falls within the quality range
+		},
+		{
+			name: "Sorting with header metrics",
+			records: []*fastx.Record{
+				createTestRecord("seq1", "ACGT", "IIII"),
+				createTestRecord("seq2", "ACGTAA", "$$$$$$"),
+			},
+			metric:    AvgPhred,
+			ascending: false,
+			compLevel: 1,
+			headerMetrics: []HeaderMetric{
+				{Name: "avgphred", IsLength: false},
+				{Name: "length", IsLength: true},
+			},
+			minPhred:  DEFAULT_MIN_PHRED,
+			minQual:   0.0,
+			maxQual:   math.Inf(1),
+			wantOrder: []string{"seq1", "seq2"},
+		},
+		{
+			name: "Natural sort with equal qualities",
+			records: []*fastx.Record{
+				createTestRecord("seq2", "ACGT", "IIII"),
+				createTestRecord("seq10", "ACGT", "IIII"),
+				createTestRecord("seq1", "ACGT", "IIII"),
+			},
+			metric:    AvgPhred,
+			ascending: false,
+			compLevel: 1,
+			minPhred:  DEFAULT_MIN_PHRED,
+			minQual:   0.0,
+			maxQual:   math.Inf(1),
+			wantOrder: []string{"seq1", "seq2", "seq10"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary input and output files
+			tmpInFile, err := os.CreateTemp("", "test_stdin_*.fastq")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(tmpInFile.Name())
+
+			tmpOutFile, err := os.CreateTemp("", "test_stdout_*.fastq")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(tmpOutFile.Name())
+
+			// Write test records to input file
+			for _, record := range tt.records {
+				fmt.Fprintf(tmpInFile, "@%s\n%s\n+\n%s\n",
+					record.Name,
+					record.Seq.Seq,
+					record.Seq.Qual)
+			}
+			tmpInFile.Close()
+
+			// Redirect stdin to read from the temp file
+			oldStdin := os.Stdin
+			newStdin, err := os.Open(tmpInFile.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			os.Stdin = newStdin
+			defer func() {
+				os.Stdin = oldStdin
+				newStdin.Close()
+			}()
+
+			// Run sortStdin
+			sortStdin(
+				tmpOutFile.Name(),
+				tt.ascending,
+				tt.metric,
+				tt.compLevel,
+				tt.headerMetrics,
+				tt.minPhred,
+				tt.minQual,
+				tt.maxQual,
+			)
+
+			// Read and verify output
+			reader, err := fastx.NewReader(seq.DNAredundant, tmpOutFile.Name(), fastx.DefaultIDRegexp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+
+			var gotOrder []string
+			for {
+				record, err := reader.Read()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				name := strings.Split(string(record.Name), " ")[0] // Extract base name without metrics
+				gotOrder = append(gotOrder, name)
+			}
+
+			// Verify the results
+			if len(gotOrder) != len(tt.wantOrder) {
+				t.Errorf("Got %d records, want %d records", len(gotOrder), len(tt.wantOrder))
+			}
+
+			if !reflect.DeepEqual(gotOrder, tt.wantOrder) {
+				t.Errorf("sortStdin() got order = %v, want %v", gotOrder, tt.wantOrder)
+			}
+
+			// If header metrics were specified, verify they were added correctly
+			if len(tt.headerMetrics) > 0 {
+				reader, _ = fastx.NewReader(seq.DNAredundant, tmpOutFile.Name(), fastx.DefaultIDRegexp)
+				record, _ := reader.Read()
+				header := string(record.Name)
+
+				// Check that all requested metrics are present
+				for _, metric := range tt.headerMetrics {
+					if metric.IsLength {
+						if !strings.Contains(header, "length=") {
+							t.Errorf("Header missing length metric: %s", header)
+						}
+					} else {
+						if !strings.Contains(header, metric.Name+"=") {
+							t.Errorf("Header missing metric %s: %s", metric.Name, header)
+						}
+					}
+				}
+			}
+		})
+	}
+}
