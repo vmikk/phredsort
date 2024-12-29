@@ -29,6 +29,15 @@ chmod +x phredsort
 ./phredsort --help
 ```
 
+### Build from source
+
+```bash
+git clone --depth 1 https://github.com/vmikk/phredsort
+cd phredsort
+go build -ldflags="-s -w" phredsort.go
+./phredsort --help
+```
+
 
 ## Quality metrics
 
