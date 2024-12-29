@@ -341,6 +341,32 @@ func TestWriteRecord(t *testing.T) {
 			wantWrite:     true,
 			wantHeader:    "test4",
 		},
+		{
+			name:          "Header with meep metric",
+			record:        createTestRecord("test5", "ACGT", "IIII"),
+			quality:       30.0,
+			minQualFilter: 20.0,
+			maxQualFilter: 40.0,
+			headerMetrics: []HeaderMetric{
+				{Name: "meep", IsLength: false},
+				{Name: "length", IsLength: true},
+			},
+			wantWrite:  true,
+			wantHeader: "test5 meep=0.010000 length=4",
+		},
+		{
+			name:          "Header with lqpercent metric",
+			record:        createTestRecord("test6", "ACGT", "II$$"),
+			quality:       30.0,
+			minQualFilter: 20.0,
+			maxQualFilter: 40.0,
+			headerMetrics: []HeaderMetric{
+				{Name: "lqpercent", IsLength: false},
+				{Name: "length", IsLength: true},
+			},
+			wantWrite:  true,
+			wantHeader: "test6 lqpercent=50.000000 length=4",
+		},
 	}
 
 	for _, tt := range tests {
