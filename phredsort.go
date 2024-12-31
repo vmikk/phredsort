@@ -294,7 +294,7 @@ func parseHeaderMetrics(metrics string) ([]HeaderMetric, error) {
 			case "avgphred", "maxee", "meep", "lqcount", "lqpercent":
 				// valid metric
 			default:
-				return nil, fmt.Errorf("invalid header metric: %s", p)
+				return nil, fmt.Errorf("Error: invalid header metric: %s", p)
 			}
 		}
 		result = append(result, hm)
