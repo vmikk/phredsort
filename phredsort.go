@@ -24,6 +24,9 @@ const (
 	DEFAULT_MIN_PHRED = 15 // min Phred score threshold for `lqcount` and `lqpercent` metrics
 )
 
+// Mock exit function for testing
+var exitFunc = os.Exit
+
 // QualityMetric represents different methods for calculating sequence quality
 type QualityMetric int
 
@@ -391,14 +394,14 @@ func main() {
 			// Check version flag
 			if version {
 				fmt.Printf("phredsort %s\n", VERSION)
-				os.Exit(0)
+				exitFunc(0)
 			}
 
 			// Check required flags
 			if inFile == "" || outFile == "" {
 				fmt.Fprintln(os.Stderr, red("Error: input and output files are required"))
 				fmt.Fprintln(os.Stderr, red("Try 'phredsort --help' for more information"))
-				os.Exit(1)
+				exitFunc(1)
 			}
 
 			// Validate metric flag
@@ -415,21 +418,21 @@ func main() {
 			case "lqpercent":
 				qualityMetric = LQPercent
 			default:
-				fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent\n"), metric)
-				os.Exit(1)
+				fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent"), metric)
+				exitFunc(1)
 			}
 
 			// Validate compression level
 			if compLevel < 0 || compLevel > 22 {
 				fmt.Fprintln(os.Stderr, red("Error: compression level must be between 0 and 22"))
-				os.Exit(1)
+				exitFunc(1)
 			}
 
 			// Parse header metrics
 			parsedHeaderMetrics, err := parseHeaderMetrics(headerMetrics)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, red(err.Error()))
-				os.Exit(1)
+				exitFunc(1)
 			}
 
 			// Process the files
@@ -461,7 +464,7 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, red(err.Error()))
 		fmt.Fprintln(os.Stderr, red("Try 'phredsort --help' for more information"))
-		os.Exit(1)
+		exitFunc(1)
 	}
 }
 
@@ -516,7 +519,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 	defer reader.Close()
 
@@ -526,7 +529,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 	outfh, err := xopen.Wopen(outFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 	defer outfh.Close()
 
@@ -534,14 +537,14 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 		encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(compLevel)))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, red("Error creating ZSTD encoder: %v\n"), err)
-			os.Exit(1)
+			exitFunc(1)
 		}
 		defer encoder.Close()
 
 		decoder, err := zstd.NewReader(nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, red("Error creating ZSTD decoder: %v\n"), err)
-			os.Exit(1)
+			exitFunc(1)
 		}
 		defer decoder.Close()
 
@@ -555,7 +558,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 			}
 			if err != nil {
 				fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
-				os.Exit(1)
+				exitFunc(1)
 			}
 
 			name := string(record.Name)
@@ -591,7 +594,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 			decompressed, err := decoder.DecodeAll(compRecord.Data, nil)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, red("Error decompressing record: %v\n"), err)
-				os.Exit(1)
+				exitFunc(1)
 			}
 
 			seqLen := len(decompressed) / 2
@@ -615,7 +618,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 			}
 			if err != nil {
 				fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
-				os.Exit(1)
+				exitFunc(1)
 			}
 
 			name := string(record.Name)
@@ -639,7 +642,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 		outfh, err := xopen.Wopen(outFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
-			os.Exit(1)
+			exitFunc(1)
 		}
 		defer outfh.Close()
 
@@ -655,7 +658,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 	reader, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 	defer reader.Close()
 
@@ -671,7 +674,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
-			os.Exit(1)
+			exitFunc(1)
 		}
 
 		name := string(record.Name)
@@ -695,7 +698,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 	reader2, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating second reader: %v\n"), err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 	defer reader2.Close()
 
@@ -708,7 +711,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
-			os.Exit(1)
+			exitFunc(1)
 		}
 		records[offset] = record.Clone()
 		offset++
@@ -718,7 +721,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 	outfh, err := xopen.Wopen(outFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 	defer outfh.Close()
 
@@ -728,7 +731,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 		record, ok := records[offset]
 		if !ok {
 			fmt.Fprintf(os.Stderr, red("Error: could not find record for %s\n"), qf.Name)
-			os.Exit(1)
+			exitFunc(1)
 		}
 		writeRecord(outfh, record, qf.Value, headerMetrics, metric, minPhred, minQualFilter, maxQualFilter)
 	}
