@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -845,4 +846,225 @@ func TestSortStdin(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMainCommand tests the main command functionality
+func TestMainCommand(t *testing.T) {
+	// Create temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "phredsort_test_*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Helper function to create test FASTQ file
+	createTestFastq := func(name string) string {
+		path := filepath.Join(tmpDir, name)
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		// Write some test FASTQ data
+		fmt.Fprintf(f, "@seq1\nACGT\n+\nIIII\n")
+		fmt.Fprintf(f, "@seq2\nACGT\n+\n$$$$\n")
+		return path
+	}
+
+	// Helper function to capture stdout/stderr
+	captureOutput := func(f func()) (string, string) {
+		oldStdout := os.Stdout
+		oldStderr := os.Stderr
+		rOut, wOut, _ := os.Pipe()
+		rErr, wErr, _ := os.Pipe()
+		os.Stdout = wOut
+		os.Stderr = wErr
+
+		f()
+
+		wOut.Close()
+		wErr.Close()
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+
+		stdout, _ := io.ReadAll(rOut)
+		stderr, _ := io.ReadAll(rErr)
+		return string(stdout), string(stderr)
+	}
+
+	tests := []struct {
+		name          string
+		args          []string
+		expectedCode  int
+		checkStdout   bool
+		checkStderr   bool
+		wantStdout    string
+		wantStderr    string
+		setupFiles    bool
+		validateFiles bool
+	}{
+		{
+			name:         "Version flag",
+			args:         []string{"--version"},
+			expectedCode: 0,
+			checkStdout:  true,
+			wantStdout:   fmt.Sprintf("phredsort %s\n", VERSION),
+		},
+		{
+			name:         "Missing required flags",
+			args:         []string{},
+			expectedCode: 1,
+			checkStderr:  true,
+			wantStderr: red("Error: input and output files are required") + "\n" +
+				red("Try 'phredsort --help' for more information") + "\n",
+		},
+		{
+			name:         "Invalid metric",
+			args:         []string{"--in", "input.fq", "--out", "output.fq", "--metric", "invalid"},
+			expectedCode: 1,
+			checkStderr:  true,
+			wantStderr:   red("Error: invalid metric 'invalid'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent"),
+		},
+		{
+			name:         "Invalid compression level",
+			args:         []string{"--in", "input.fq", "--out", "output.fq", "--compress", "23"},
+			expectedCode: 1,
+			checkStderr:  true,
+			wantStderr:   red("Error: compression level must be between 0 and 22") + "\n",
+		},
+		{
+			name:         "Invalid header metrics",
+			args:         []string{"--in", "input.fq", "--out", "output.fq", "--header", "invalid,metrics"},
+			expectedCode: 1,
+			checkStderr:  true,
+			wantStderr:   red("Error: invalid header metric: invalid") + "\n",
+		},
+		{
+			name:          "Basic file processing",
+			args:          []string{"--in", "input.fq", "--out", "output.fq"},
+			expectedCode:  0,
+			setupFiles:    true,
+			validateFiles: true,
+		},
+		{
+			name: "Complex command with multiple options",
+			args: []string{
+				"--in", "input.fq",
+				"--out", "output.fq",
+				"--metric", "avgphred",
+				"--minphred", "20",
+				"--minqual", "15",
+				"--maxqual", "40",
+				"--header", "avgphred,maxee,length",
+				"--ascending",
+				"--compress", "1",
+			},
+			expectedCode:  0,
+			setupFiles:    true,
+			validateFiles: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setupFiles {
+				inFile := createTestFastq("input.fq")
+				outFile := filepath.Join(tmpDir, "output.fq")
+
+				// Update args with actual file paths
+				for i, arg := range tt.args {
+					switch arg {
+					case "input.fq":
+						tt.args[i] = inFile
+					case "output.fq":
+						tt.args[i] = outFile
+					}
+				}
+			}
+
+			// Reset os.Args and set test arguments
+			oldArgs := os.Args
+			os.Args = append([]string{"phredsort"}, tt.args...)
+
+			// Capture exit code
+			var exitCode int
+			oldExit := exitFunc
+			exitFunc = func(code int) {
+				exitCode = code
+				panic(fmt.Sprintf("exit %d", code))
+			}
+			defer func() {
+				exitFunc = oldExit
+				os.Args = oldArgs
+
+				if r := recover(); r != nil {
+					if exitStr, ok := r.(string); !ok || !strings.HasPrefix(exitStr, "exit ") {
+						t.Errorf("Unexpected panic: %v", r)
+					}
+				}
+			}()
+
+			// Run main and capture output
+			stdout, stderr := captureOutput(func() {
+				defer func() {
+					if r := recover(); r != nil {
+						if exitStr, ok := r.(string); !ok || !strings.HasPrefix(exitStr, "exit ") {
+							panic(r)
+						}
+					}
+				}()
+				main()
+			})
+
+			// Check exit code
+			if exitCode != tt.expectedCode {
+				t.Errorf("Expected exit code %d, got %d", tt.expectedCode, exitCode)
+			}
+
+			// Check stdout if required
+			if tt.checkStdout && stdout != tt.wantStdout {
+				t.Errorf("Expected stdout:\n%s\nGot:\n%s", tt.wantStdout, stdout)
+			}
+
+			// Check stderr if required (including non-printable characters)
+			if tt.checkStderr && stderr != tt.wantStderr {
+				t.Errorf("Expected stderr:\n%q\nGot:\n%q", tt.wantStderr, stderr)
+			}
+
+			// Validate output file if required
+			if tt.validateFiles {
+				outPath := filepath.Join(tmpDir, "output.fq")
+				if _, err := os.Stat(outPath); os.IsNotExist(err) {
+					t.Error("Expected output file was not created")
+				}
+
+				// Optional: Add more specific file content validation here
+				// For example, check if the file is valid FASTQ format
+				reader, err := fastx.NewReader(seq.DNAredundant, outPath, fastx.DefaultIDRegexp)
+				if err != nil {
+					t.Errorf("Failed to read output file: %v", err)
+				}
+				defer reader.Close()
+
+				// Try to read at least one record
+				_, err = reader.Read()
+				if err != nil && err != io.EOF {
+					t.Errorf("Failed to read record from output file: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestMain(m *testing.M) {
+	// Store original exit function
+	originalExit := exitFunc
+	// Replace exit function with mock during tests
+	exitFunc = func(code int) {
+		panic(fmt.Sprintf("exit %d", code))
+	}
+	defer func() { exitFunc = originalExit }()
+
+	m.Run()
 }
