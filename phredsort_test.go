@@ -342,6 +342,19 @@ func TestWriteRecord(t *testing.T) {
 			wantHeader:    "test4",
 		},
 		{
+			name:          "Header with maxee metric",
+			record:        createTestRecord("test5", "ACGT", "IIII"),
+			quality:       30.0,
+			minQualFilter: 20.0,
+			maxQualFilter: 40.0,
+			headerMetrics: []HeaderMetric{
+				{Name: "maxee", IsLength: false},
+				{Name: "length", IsLength: true},
+			},
+			wantWrite:  true,
+			wantHeader: "test5 maxee=0.000400 length=4",
+		},
+		{
 			name:          "Header with meep metric",
 			record:        createTestRecord("test5", "ACGT", "IIII"),
 			quality:       30.0,
