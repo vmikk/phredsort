@@ -306,23 +306,24 @@ func parseHeaderMetrics(metrics string) ([]HeaderMetric, error) {
 	return result, nil
 }
 
-func main() {
-	var (
-		inFile        string
-		outFile       string
-		metric        string
-		ascending     bool
-		compLevel     int
-		version       bool
-		headerMetrics string
-		minPhred      int
-		minQualFilter float64
-		maxQualFilter float64
-	)
+// Variable declarations (at package level)
+var (
+	// Command-line flags for the default sorting command
+	inFile        string
+	outFile       string
+	metric        string
+	minPhred      int
+	minQualFilter float64
+	maxQualFilter float64
+	headerMetrics string
+	ascending     bool
+	compLevel     int
+	version       bool
+)
 
-	// Create custom help function
-	helpFunc := func(cmd *cobra.Command, args []string) {
-		fmt.Printf(`
+// Custom help function
+func helpFunc(cmd *cobra.Command, args []string) {
+	fmt.Printf(`
 %s
 
 %s
@@ -360,111 +361,145 @@ func main() {
   https://github.com/vmikk/phredsort
 
 `,
-			bold(getColorizedLogo()+" phredsort v."+VERSION+" - Sorts FASTQ based on different sequence quality metrics"),
-			bold(yellow("Quality metrics:")),
-			cyan("avgphred")+"  : average Phred quality score",
-			cyan("maxee")+"     : maximum expected error (absolute number)",
-			cyan("meep")+"      : maximum expected error (percentage per sequence length)",
-			cyan("lqcount")+"   : number of bases below quality threshold (default, 15)",
-			cyan("lqpercent")+" : percentage of bases below quality threshold",
-			bold(yellow("Flags:")),
-			cyan("-i, --in")+" <string>      : Input FASTQ file (required, use '-' for stdin)",
-			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use '-' for stdout)",
-			cyan("-s, --metric")+" <string>  : Quality metric (avgphred, maxee, meep, lqcount, lqpercent) (default, 'avgphred')",
-			cyan("-p, --minphred")+" <int>   : Quality threshold for 'lqcount' and 'lqpercent' metrics (default, 15)",
-			cyan("-m, --minqual")+" <float>  : Minimum quality threshold for filtering (optional)",
-			cyan("-M, --maxqual")+" <float>  : Maximum quality threshold for filtering (optional)",
-			cyan("-H, --header")+" <string>  : Comma-separated list of metrics to add to headers (e.g., 'avgphred,maxee,length')",
-			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order of quality (default, false)",
-			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22; default, 1)",
-			cyan("-h, --help")+"             : Show help message",
-			cyan("-v, --version")+"          : Show version information",
-			bold(yellow("Usage examples:")),
-			cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
-			cyan("cat input.fq | phredsort --compress 0 -i - -o - > sorted.fq"),
-			cyan("phredsort -i inp.fq.gz -o out.fq.gz --metric avgphred --minqual 20 --header avgphred,maxee,lqpercent,length"),
-			bold(yellow("More information:")),
-		)
-	}
+		bold(getColorizedLogo()+" phredsort v."+VERSION+" - Sorts FASTQ based on different sequence quality metrics"),
+		bold(yellow("Quality metrics:")),
+		cyan("avgphred")+"  : average Phred quality score",
+		cyan("maxee")+"     : maximum expected error (absolute number)",
+		cyan("meep")+"      : maximum expected error (percentage per sequence length)",
+		cyan("lqcount")+"   : number of bases below quality threshold (default, 15)",
+		cyan("lqpercent")+" : percentage of bases below quality threshold",
+		bold(yellow("Flags:")),
+		cyan("-i, --in")+" <string>      : Input FASTQ file (required, use '-' for stdin)",
+		cyan("-o, --out")+" <string>     : Output FASTQ file (required, use '-' for stdout)",
+		cyan("-s, --metric")+" <string>  : Quality metric (avgphred, maxee, meep, lqcount, lqpercent) (default, 'avgphred')",
+		cyan("-p, --minphred")+" <int>   : Quality threshold for 'lqcount' and 'lqpercent' metrics (default, 15)",
+		cyan("-m, --minqual")+" <float>  : Minimum quality threshold for filtering (optional)",
+		cyan("-M, --maxqual")+" <float>  : Maximum quality threshold for filtering (optional)",
+		cyan("-H, --header")+" <string>  : Comma-separated list of metrics to add to headers (e.g., 'avgphred,maxee,length')",
+		cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order of quality (default, false)",
+		cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22; default, 1)",
+		cyan("-h, --help")+"             : Show help message",
+		cyan("-v, --version")+"          : Show version information",
+		bold(yellow("Usage examples:")),
+		cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
+		cyan("cat input.fq | phredsort --compress 0 -i - -o - > sorted.fq"),
+		cyan("phredsort -i inp.fq.gz -o out.fq.gz --metric avgphred --minqual 20 --header avgphred,maxee,lqpercent,length"),
+		bold(yellow("More information:")),
+	)
+}
 
+func main() {
+	// Create root command
 	rootCmd := &cobra.Command{
 		Use:   "phredsort",
 		Short: bold("Sorts FASTQ files by quality metrics"),
-		Run: func(cmd *cobra.Command, args []string) {
-			// Check version flag
-			if version {
-				fmt.Printf("phredsort %s\n", VERSION)
-				exitFunc(0)
-			}
-
-			// Check required flags
-			if inFile == "" || outFile == "" {
-				fmt.Fprintln(os.Stderr, red("Error: input and output files are required"))
-				fmt.Fprintln(os.Stderr, red("Try 'phredsort --help' for more information"))
-				exitFunc(1)
-			}
-
-			// Validate metric flag
-			var qualityMetric QualityMetric
-			switch strings.ToLower(metric) {
-			case "avgphred":
-				qualityMetric = AvgPhred
-			case "maxee":
-				qualityMetric = MaxEE
-			case "meep":
-				qualityMetric = Meep
-			case "lqcount":
-				qualityMetric = LQCount
-			case "lqpercent":
-				qualityMetric = LQPercent
-			default:
-				fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent"), metric)
-				exitFunc(1)
-			}
-
-			// Validate compression level
-			if compLevel < 0 || compLevel > 22 {
-				fmt.Fprintln(os.Stderr, red("Error: compression level must be between 0 and 22"))
-				exitFunc(1)
-			}
-
-			// Parse header metrics
-			parsedHeaderMetrics, err := parseHeaderMetrics(headerMetrics)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, red(err.Error()))
-				exitFunc(1)
-			}
-
-			// Process the files
-			if inFile == "-" {
-				sortStdin(outFile, ascending, qualityMetric, compLevel, parsedHeaderMetrics, minPhred, minQualFilter, maxQualFilter)
-			} else {
-				sortFile(inFile, outFile, ascending, qualityMetric, parsedHeaderMetrics, minPhred, minQualFilter, maxQualFilter)
-			}
-		},
+		// When no subcommand is specified, run the default sorting behavior
+		Run: runDefaultCommand,
 	}
 
-	// Set the help function
+	// The default command = quality estimation and sorting
+	defaultCmd := &cobra.Command{
+		Use:   "sort",
+		Short: "Sort sequences by calculating quality metrics",
+		Run:   runDefaultCommand,
+	}
+
+	// Define flags for the default sorting behavior
+	// The same flags are registered on both the root command and the explicit "sort" subcommand,
+	// so that both of the following commands are supported:
+	//  phredsort      -i in.fq -o out.fq ...
+	//  phredsort sort -i in.fq -o out.fq ...
+
+	rootFlags := rootCmd.Flags()
+	rootFlags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
+	rootFlags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
+	rootFlags.StringVarP(&metric, "metric", "s", "avgphred", "Quality metric (avgphred, maxee, meep, lqcount, lqpercent)")
+	rootFlags.IntVarP(&minPhred, "minphred", "p", DEFAULT_MIN_PHRED, "Quality threshold for 'lqcount' and 'lqpercent' metrics")
+	rootFlags.Float64VarP(&minQualFilter, "minqual", "m", -math.MaxFloat64, "Minimum quality threshold for filtering")
+	rootFlags.Float64VarP(&maxQualFilter, "maxqual", "M", math.MaxFloat64, "Maximum quality threshold for filtering")
+	rootFlags.StringVarP(&headerMetrics, "header", "H", "", "Comma-separated list of metrics to add to headers (e.g., 'avgphred,maxee,length')")
+	rootFlags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order of quality (default: descending)")
+	rootFlags.IntVarP(&compLevel, "compress", "c", 1, "Memory compression level for stdin-based mode (0=disabled, 1-22; default: 1)")
+	rootFlags.BoolVarP(&version, "version", "v", false, "Show version information")
+
+	sortFlags := defaultCmd.Flags()
+	sortFlags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
+	sortFlags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
+	sortFlags.StringVarP(&metric, "metric", "s", "avgphred", "Quality metric (avgphred, maxee, meep, lqcount, lqpercent)")
+	sortFlags.IntVarP(&minPhred, "minphred", "p", DEFAULT_MIN_PHRED, "Quality threshold for 'lqcount' and 'lqpercent' metrics")
+	sortFlags.Float64VarP(&minQualFilter, "minqual", "m", -math.MaxFloat64, "Minimum quality threshold for filtering")
+	sortFlags.Float64VarP(&maxQualFilter, "maxqual", "M", math.MaxFloat64, "Maximum quality threshold for filtering")
+	sortFlags.StringVarP(&headerMetrics, "header", "H", "", "Comma-separated list of metrics to add to headers (e.g., 'avgphred,maxee,length')")
+	sortFlags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order of quality (default: descending)")
+	sortFlags.IntVarP(&compLevel, "compress", "c", 1, "Memory compression level for stdin-based mode (0=disabled, 1-22; default: 1)")
+	sortFlags.BoolVarP(&version, "version", "v", false, "Show version information")
+
+	// Add commands
+	rootCmd.AddCommand(defaultCmd)          // sort using quality estimation
+	rootCmd.AddCommand(HeaderSortCommand()) // sort using pre-computed quality scores
+
+	// Set help function
 	rootCmd.SetHelpFunc(helpFunc)
 
-	// Define flags
-	flags := rootCmd.Flags()
-	flags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
-	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
-	flags.StringVarP(&metric, "metric", "s", "avgphred", "Quality metric (avgphred, maxee, meep, lqcount, lqpercent)")
-	flags.IntVarP(&minPhred, "minphred", "p", DEFAULT_MIN_PHRED, "Quality threshold for 'lqcount' and 'lqpercent' metrics")
-	flags.Float64VarP(&minQualFilter, "minqual", "m", -math.MaxFloat64, "Minimum quality threshold for filtering")
-	flags.Float64VarP(&maxQualFilter, "maxqual", "M", math.MaxFloat64, "Maximum quality threshold for filtering")
-	flags.StringVarP(&headerMetrics, "header", "H", "", "Comma-separated list of metrics to add to headers (e.g., 'avgphred,maxee,length')")
-	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort sequences in ascending order of quality (default: descending)")
-	flags.IntVarP(&compLevel, "compress", "c", 1, "Memory compression level for stdin-based mode (0=disabled, 1-22; default: 1)")
-	flags.BoolVarP(&version, "version", "v", false, "Show version information")
-
-	// Custom error handling
+	// Execute
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, red(err.Error()))
 		fmt.Fprintln(os.Stderr, red("Try 'phredsort --help' for more information"))
 		exitFunc(1)
+	}
+}
+
+// The main sorting function logic (file-based mode or stdin-based mode)
+func runDefaultCommand(cmd *cobra.Command, args []string) {
+	// Check version flag
+	if version {
+		fmt.Printf("phredsort %s\n", VERSION)
+		exitFunc(0)
+	}
+
+	// Check required flags
+	if inFile == "" || outFile == "" {
+		fmt.Fprintln(os.Stderr, red("Error: input and output files are required"))
+		fmt.Fprintln(os.Stderr, red("Try 'phredsort --help' for more information"))
+		exitFunc(1)
+	}
+
+	// Validate metric flag
+	var qualityMetric QualityMetric
+	switch strings.ToLower(metric) {
+	case "avgphred":
+		qualityMetric = AvgPhred
+	case "maxee":
+		qualityMetric = MaxEE
+	case "meep":
+		qualityMetric = Meep
+	case "lqcount":
+		qualityMetric = LQCount
+	case "lqpercent":
+		qualityMetric = LQPercent
+	default:
+		fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent"), metric)
+		exitFunc(1)
+	}
+
+	// Validate compression level
+	if compLevel < 0 || compLevel > 22 {
+		fmt.Fprintln(os.Stderr, red("Error: compression level must be between 0 and 22"))
+		exitFunc(1)
+	}
+
+	// Parse header metrics
+	parsedHeaderMetrics, err := parseHeaderMetrics(headerMetrics)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, red(err.Error()))
+		exitFunc(1)
+	}
+
+	// Process the files
+	if inFile == "-" {
+		sortStdin(outFile, ascending, qualityMetric, compLevel, parsedHeaderMetrics, minPhred, minQualFilter, maxQualFilter)
+	} else {
+		sortFile(inFile, outFile, ascending, qualityMetric, parsedHeaderMetrics, minPhred, minQualFilter, maxQualFilter)
 	}
 }
 
