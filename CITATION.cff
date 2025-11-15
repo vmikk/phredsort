@@ -1,4 +1,4 @@
-cff-version: 1.2.0
+cff-version: 1.4.0
 title: "phredsort: a command-line tool for sorting sequences in a FASTQ file by their quality scores"
 type: software
 authors:
