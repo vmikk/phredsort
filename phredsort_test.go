@@ -1068,3 +1068,203 @@ func TestMain(m *testing.M) {
 
 	m.Run()
 }
+
+// TestParsePreSortRecord verifies parsing of pre-computed header metrics for headersort mode
+func TestParsePreSortRecord(t *testing.T) {
+	tests := []struct {
+		name        string
+		header      string
+		metric      QualityMetric
+		wantID      string
+		wantQual    float64
+		wantSize    int
+		wantHasQual bool
+		wantHasSize bool
+	}{
+		{
+			name:        "Space-separated maxee with size",
+			header:      ">seq1 maxee=2.5 size=100",
+			metric:      MaxEE,
+			wantID:      "seq1",
+			wantQual:    2.5,
+			wantSize:    100,
+			wantHasQual: true,
+			wantHasSize: true,
+		},
+		{
+			name:        "Semicolon-separated maxee with size",
+			header:      ">seq2;maxee=0.5;size=200",
+			metric:      MaxEE,
+			// For semicolon-separated headers without spaces, the entire header
+			// (minus the leading '>') is treated as the ID
+			wantID:      "seq2;maxee=0.5;size=200",
+			wantQual:    0.5,
+			wantSize:    200,
+			wantHasQual: true,
+			wantHasSize: true,
+		},
+		{
+			name:        "Missing metric but with size",
+			header:      ">seq3 size=300",
+			metric:      MaxEE,
+			wantID:      "seq3",
+			wantQual:    0.0,
+			wantSize:    300,
+			wantHasQual: false,
+			wantHasSize: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record := &fastx.Record{
+				Name: []byte(tt.header),
+			}
+
+			got, err := parsePreSortRecord(record, tt.metric)
+			if err != nil {
+				t.Fatalf("parsePreSortRecord() unexpected error: %v", err)
+			}
+
+			if got.ID != tt.wantID {
+				t.Errorf("ID = %q, want %q", got.ID, tt.wantID)
+			}
+			if got.HasQual != tt.wantHasQual {
+				t.Errorf("HasQual = %v, want %v", got.HasQual, tt.wantHasQual)
+			}
+			if got.HasSize != tt.wantHasSize {
+				t.Errorf("HasSize = %v, want %v", got.HasSize, tt.wantHasSize)
+			}
+			if tt.wantHasQual && math.Abs(got.Quality-tt.wantQual) > 1e-6 {
+				t.Errorf("Quality = %v, want %v", got.Quality, tt.wantQual)
+			}
+			if tt.wantHasSize && got.Size != tt.wantSize {
+				t.Errorf("Size = %d, want %d", got.Size, tt.wantSize)
+			}
+		})
+	}
+}
+
+// TestRunPresort verifies headersort mode (runPresort) using pre-computed metrics in headers
+func TestRunPresort(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "headersort_test_*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	createInput := func(name, content string) string {
+		path := filepath.Join(tmpDir, name)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("failed to write test input: %v", err)
+		}
+		return path
+	}
+
+	tests := []struct {
+		name        string
+		content     string
+		metric      QualityMetric
+		ascending   bool
+		minQual     float64
+		maxQual     float64
+		wantOrder   []string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "MaxEE default ordering (best to worst)",
+			content: "" +
+				">seq1 maxee=2.0 size=100\nACGT\n" +
+				">seq2 maxee=0.5 size=200\nACGT\n",
+			metric:    MaxEE,
+			ascending: false,
+			minQual:   -math.MaxFloat64,
+			maxQual:   math.MaxFloat64,
+			// For MaxEE, lower is better; default ordering should be best-to-worst
+			wantOrder: []string{"seq2", "seq1"},
+		},
+		{
+			name: "MaxEE ascending (worst to best)",
+			content: "" +
+				">seq1 maxee=2.0\nACGT\n" +
+				">seq2 maxee=0.5\nACGT\n",
+			metric:    MaxEE,
+			ascending: true,
+			minQual:   -math.MaxFloat64,
+			maxQual:   math.MaxFloat64,
+			// Ascending flips the default ordering.
+			wantOrder: []string{"seq1", "seq2"},
+		},
+		{
+			name: "Quality filtering",
+			content: "" +
+				">seq1 maxee=0.5\nACGT\n" +
+				">seq2 maxee=2.0\nACGT\n" +
+				">seq3 maxee=5.0\nACGT\n",
+			metric:    MaxEE,
+			ascending: false,
+			minQual:   1.0,
+			maxQual:   4.0,
+			// Only seq2 (maxee=2.0) falls within [1.0, 4.0]
+			wantOrder: []string{"seq2"},
+		},
+		{
+			name: "Missing required metric produces error",
+			content: "" +
+				">seq1 size=100\nACGT\n",
+			metric:      MaxEE,
+			ascending:   false,
+			minQual:     -math.MaxFloat64,
+			maxQual:     math.MaxFloat64,
+			wantErr:     true,
+			errContains: "record missing required quality metric",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inPath := createInput("input.fasta", tt.content)
+			outPath := filepath.Join(tmpDir, "output.fasta")
+
+			err := runPresort(inPath, outPath, tt.metric, tt.ascending, tt.minQual, tt.maxQual)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("runPresort() expected error, got nil")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Fatalf("runPresort() error = %q, want to contain %q", err.Error(), tt.errContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("runPresort() unexpected error: %v", err)
+			}
+
+			// Read and verify output order
+			reader, err := fastx.NewDefaultReader(outPath)
+			if err != nil {
+				t.Fatalf("failed to create reader: %v", err)
+			}
+			defer reader.Close()
+
+			var gotOrder []string
+			for {
+				record, err := reader.Read()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatalf("failed to read record: %v", err)
+				}
+				// ID is the first token of the header
+				name := strings.Split(string(record.Name), " ")[0]
+				gotOrder = append(gotOrder, name)
+			}
+
+			if !reflect.DeepEqual(gotOrder, tt.wantOrder) {
+				t.Errorf("runPresort() got order = %v, want %v", gotOrder, tt.wantOrder)
+			}
+		})
+	}
+}
