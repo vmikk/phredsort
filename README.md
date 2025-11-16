@@ -45,7 +45,7 @@ Examples of supported header formats:
 ### Download compiled binary (for Linux)
 
 ```bash
-wget https://github.com/vmikk/phredsort/releases/download/1.3.0/phredsort
+wget https://github.com/vmikk/phredsort/releases/download/1.4.0/phredsort
 chmod +x phredsort
 ./phredsort --help
 ```
