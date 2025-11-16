@@ -2,19 +2,12 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"math"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/fatih/color"
 	"github.com/maruel/natural"
-
-	"github.com/klauspost/compress/zstd"
-	"github.com/shenwei356/bio/seq"
-	"github.com/shenwei356/bio/seqio/fastx"
-	"github.com/shenwei356/xopen"
 	"github.com/spf13/cobra"
 )
 
