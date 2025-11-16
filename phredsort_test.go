@@ -14,6 +14,7 @@ import (
 	"github.com/shenwei356/bio/seq"
 	"github.com/shenwei356/bio/seqio/fastx"
 	"github.com/shenwei356/xopen"
+	"github.com/spf13/cobra"
 )
 
 // Helper function to create test FASTX records
@@ -1416,3 +1417,88 @@ func TestRunPresort(t *testing.T) {
 		})
 	}
 }
+
+// captureStdout is a helper that captures standard output produced by f
+// (used for testing the help function)
+func captureStdout(f func()) string {
+	oldStdout := os.Stdout
+	rOut, wOut, _ := os.Pipe()
+	os.Stdout = wOut
+
+	f()
+
+	wOut.Close()
+	os.Stdout = oldStdout
+
+	outBytes, _ := io.ReadAll(rOut)
+	return string(outBytes)
+}
+
+// TestHelpFuncRoot verifies that the custom help function prints the root help
+// information, including version and subcommand details
+func TestHelpFuncRoot(t *testing.T) {
+	cmd := &cobra.Command{
+		Use: "phredsort",
+	}
+
+	output := captureStdout(func() {
+		helpFunc(cmd, nil)
+	})
+
+	if !strings.Contains(output, "phredsort v."+VERSION) {
+		t.Errorf("root help output missing version string, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Subcommands:") {
+		t.Errorf("root help output missing 'Subcommands:' section, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Quality metrics:") {
+		t.Errorf("root help output missing 'Quality metrics:' section, got:\n%s", output)
+	}
+}
+
+// TestHelpFuncSort verifies that the custom help function prints detailed help for the `sort` subcommand
+func TestHelpFuncSort(t *testing.T) {
+	cmd := &cobra.Command{
+		Use: "sort",
+	}
+
+	output := captureStdout(func() {
+		helpFunc(cmd, nil)
+	})
+
+	if !strings.Contains(output, "phredsort sort - Sorts FASTQ based on computed quality metrics") {
+		t.Errorf("sort help output missing sort description, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Input FASTQ file (required, use '-' for stdin)") {
+		t.Errorf("sort help output missing input flag description, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Quality metric (avgphred, maxee, meep, lqcount, lqpercent)") {
+		t.Errorf("sort help output missing metric flag description, got:\n%s", output)
+	}
+}
+
+// TestHelpFuncHeaderSort verifies that the custom help function prints detailed
+// help for the `headersort` subcommand, including supported header formats
+func TestHelpFuncHeaderSort(t *testing.T) {
+	cmd := &cobra.Command{
+		Use: "headersort",
+	}
+
+	output := captureStdout(func() {
+		helpFunc(cmd, nil)
+	})
+
+	if !strings.Contains(output, "phredsort headersort - Sorts sequences using header quality metrics") {
+		t.Errorf("headersort help output missing headersort description, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Header metric to use (avgphred, maxee, meep, lqcount, lqpercent)") {
+		t.Errorf("headersort help output missing metric flag description, got:\n%s", output)
+	}
+	if !strings.Contains(output, `">seq1 maxee=2.5 size=100"`) {
+		t.Errorf("headersort help output missing space-separated header format example, got:\n%s", output)
+	}
+	if !strings.Contains(output, `">seq1;maxee=2.5;size=100"`) {
+		t.Errorf("headersort help output missing semicolon-separated header format example, got:\n%s", output)
+	}
+}
+
