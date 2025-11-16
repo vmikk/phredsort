@@ -19,6 +19,27 @@ zcat input.fastq.gz | phredsort --in - --out - | less -S
 ![phredsort help message](assets/phredsort.webp)
 
 
+### Sort sequences using pre-computed maxEE scores in headers
+```bash
+phredsort headersort -i input.fasta -o output.fasta --metric maxee
+```
+
+### Sort by avgphred scores with quality filtering
+```bash
+phredsort headersort -i input.fastq -o output.fastq --metric avgphred --minqual 20 --maxqual 40
+```
+
+### Sort in ascending order (lower quality first)
+```bash
+phredsort headersort -i input.fa -o output.fa --metric meep --ascending
+```
+
+Examples of supported header formats:
+- Space-separated: ">seq1 maxee=2.5 size=100"
+- Semicolon-separated: ">seq1;maxee=2.5;size=100"
+
+
+
 ## Installation
 
 ### Download compiled binary (for Linux)
