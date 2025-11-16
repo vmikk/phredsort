@@ -848,6 +848,154 @@ func TestSortStdin(t *testing.T) {
 	}
 }
 
+// TestRunDefaultCommand_Stdin verifies that runDefaultCommand calls sortStdin
+// when the input is set to "-" (stdin) and that sorting succeeds
+func TestRunDefaultCommand_Stdin(t *testing.T) {
+	// Prepare temporary stdin FASTQ file
+	tmpInFile, err := os.CreateTemp("", "default_cmd_stdin_*.fastq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpInFile.Name())
+
+	// Two simple records with different qualities so we can verify ordering
+	fmt.Fprintf(tmpInFile, "@seq1\nACGT\n+\nIIII\n") // high quality
+	fmt.Fprintf(tmpInFile, "@seq2\nACGT\n+\n$$$$\n") // low quality
+	tmpInFile.Close()
+
+	// Redirect stdin to the temp file
+	oldStdin := os.Stdin
+	newStdin, err := os.Open(tmpInFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = newStdin
+	defer func() {
+		os.Stdin = oldStdin
+		newStdin.Close()
+	}()
+
+	// Prepare temporary output file
+	tmpOutFile, err := os.CreateTemp("", "default_cmd_stdout_*.fastq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpOutFile.Close()
+	defer os.Remove(tmpOutFile.Name())
+
+	// Set global flags used by runDefaultCommand
+	inFile = "-"
+	outFile = tmpOutFile.Name()
+	metric = "avgphred"
+	minPhred = DEFAULT_MIN_PHRED
+	minQualFilter = -math.MaxFloat64
+	maxQualFilter = math.MaxFloat64
+	headerMetrics = ""
+	ascending = false
+	compLevel = 0
+	version = false
+
+	// Call runDefaultCommand; on success it should not call exitFunc.
+	// exitFunc is already mocked to panic in TestMain, but since we
+	// expect no error, we can call directly without a recover wrapper
+	runDefaultCommand(nil, nil)
+
+	// Verify output order (seq1 should come before seq2)
+	reader, err := fastx.NewReader(seq.DNAredundant, tmpOutFile.Name(), fastx.DefaultIDRegexp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	var gotOrder []string
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := strings.Split(string(record.Name), " ")[0]
+		gotOrder = append(gotOrder, name)
+	}
+
+	wantOrder := []string{"seq1", "seq2"}
+	if !reflect.DeepEqual(gotOrder, wantOrder) {
+		t.Errorf("runDefaultCommand(stdin) produced order %v, want %v", gotOrder, wantOrder)
+	}
+}
+
+// TestSortStdin_ReadError covers the error path when reading from stdin fails
+// inside sortStdin (i.e. the "Error reading record" branch)
+func TestSortStdin_ReadError(t *testing.T) {
+	// Capture stderr and recover from the expected panic triggered via exitFunc
+	oldStderr := os.Stderr
+	rErr, wErr, _ := os.Pipe()
+	os.Stderr = wErr
+
+	defer func() {
+		wErr.Close()
+		os.Stderr = oldStderr
+	}()
+
+	// Prepare a valid output path (we are testing read errors, not write errors)
+	tmpDir, err := os.MkdirTemp("", "sortstdin_readerr_*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	outPath := filepath.Join(tmpDir, "out.fastq")
+
+	// Redirect stdin to a malformed FASTQ file to trigger a read error
+	tmpInFile, err := os.CreateTemp("", "sortstdin_err_in_*.fastq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Write clearly invalid FASTQ content (not following 4-line record structure)
+	fmt.Fprintln(tmpInFile, "this_is_not_a_valid_fastq_record")
+	tmpInFile.Close()
+	defer os.Remove(tmpInFile.Name())
+
+	oldStdin := os.Stdin
+	newStdin, err := os.Open(tmpInFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = newStdin
+	defer func() {
+		os.Stdin = oldStdin
+		newStdin.Close()
+	}()
+
+	// Call sortStdin and expect it to call exitFunc(1), which panics
+	didPanic := false
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// exitFunc is configured to panic with "exit <code>"
+				if s, ok := r.(string); ok && strings.HasPrefix(s, "exit ") {
+					didPanic = true
+				} else {
+					t.Fatalf("Unexpected panic: %v", r)
+				}
+			}
+		}()
+
+		sortStdin(outPath, false, AvgPhred, 0, nil, DEFAULT_MIN_PHRED, -math.MaxFloat64, math.MaxFloat64)
+	}()
+
+	// Read captured stderr
+	wErr.Close()
+	errOutput, _ := io.ReadAll(rErr)
+
+	if !didPanic {
+		t.Fatalf("Expected sortStdin to call exitFunc and panic, but it did not")
+	}
+	if !strings.Contains(string(errOutput), "Error reading record") {
+		t.Errorf("Expected stderr to contain 'Error reading record', got: %s", string(errOutput))
+	}
+}
 // TestMainCommand tests the main command functionality
 func TestMainCommand(t *testing.T) {
 	// Create temporary directory for test files
