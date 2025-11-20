@@ -86,9 +86,9 @@ func helpFunc(cmd *cobra.Command, args []string) {
 			cyan("-i, --in")+" <string>      : Input FASTQ file (required, use '-' for stdin)",
 			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use '-' for stdout)",
 			cyan("-s, --metric")+" <string>  : Quality metric (avgphred, maxee, meep, lqcount, lqpercent) (default, 'avgphred')",
-			cyan("-p, --minphred")+" <int>   : Quality threshold for 'lqcount' and 'lqpercent' metrics (default, 15)",
 			cyan("-m, --minqual")+" <float>  : Minimum quality threshold for filtering (optional)",
 			cyan("-M, --maxqual")+" <float>  : Maximum quality threshold for filtering (optional)",
+			cyan("-p, --minphred")+" <int>   : Quality threshold for 'lqcount' and 'lqpercent' metrics (default, 15)",
 			cyan("-H, --header")+" <string>  : Comma-separated list of metrics to add to headers (e.g., 'avgphred,maxee,length')",
 			cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order of quality (default, false)",
 			cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22; default, 1)",
@@ -96,6 +96,42 @@ func helpFunc(cmd *cobra.Command, args []string) {
 			bold(yellow("Examples:")),
 			cyan("phredsort sort --metric avgphred --in input.fq.gz --out output.fq.gz"),
 			cyan("cat input.fq | phredsort sort --compress 0 -i - -o - > sorted.fq"),
+		)
+		return
+	case "nosort":
+		fmt.Printf(`
+%s
+
+%s
+  Estimate FASTQ sequence quality metrics without sorting. Records are streamed
+  from input to output in their original order, with optional filtering and
+  header annotation.
+
+%s
+  %s
+  %s
+  %s
+  %s
+  %s
+  %s
+
+%s
+  %s
+  %s
+
+`,
+			bold(getColorizedLogo()+" phredsort nosort - Estimates FASTQ quality without sorting"),
+			bold(yellow("Description:")),
+			bold(yellow("Flags:")),
+			cyan("-i, --in")+" <string>      : Input FASTQ file (required, use '-' for stdin)",
+			cyan("-o, --out")+" <string>     : Output FASTQ file (required, use '-' for stdout)",
+			cyan("-s, --metric")+" <string>  : Quality metric (avgphred, maxee, meep, lqcount, lqpercent) (default, 'avgphred')",
+			cyan("-m, --minqual")+" <float>  : Minimum quality threshold for filtering (optional)",
+			cyan("-M, --maxqual")+" <float>  : Maximum quality threshold for filtering (optional)",
+			cyan("-p, --minphred")+" <int>   : Quality threshold for 'lqcount' and 'lqpercent' metrics (default, 15)",
+			bold(yellow("Examples:")),
+			cyan("phredsort nosort --metric avgphred --in input.fq.gz --out output.fq.gz"),
+			cyan("cat input.fq | phredsort nosort --metric maxee --maxqual 1 -i - -o - > output.fq"),
 		)
 		return
 	}
@@ -127,6 +163,7 @@ func helpFunc(cmd *cobra.Command, args []string) {
 %s
   %s
   %s
+  %s
 
 %s
   # File-based mode (reads from a file, lower memory usage)
@@ -141,6 +178,9 @@ func helpFunc(cmd *cobra.Command, args []string) {
 
   # Sort sequences using pre-computed quality scores (stored in headers)
   # (e.g., ">seq1 maxee=1 avgphred=15.5" or ">seq1;maxee=1;avgphred=15.5")
+  %s
+
+  # Estimate quality metrics without sorting, add quality metrics to headers, and filter sequences
   %s
 
 %s
@@ -158,9 +198,9 @@ func helpFunc(cmd *cobra.Command, args []string) {
 		cyan("-i, --in")+" <string>      : Input FASTQ file (required, use '-' for stdin)",
 		cyan("-o, --out")+" <string>     : Output FASTQ file (required, use '-' for stdout)",
 		cyan("-s, --metric")+" <string>  : Quality metric (avgphred, maxee, meep, lqcount, lqpercent) (default, 'avgphred')",
-		cyan("-p, --minphred")+" <int>   : Quality threshold for 'lqcount' and 'lqpercent' metrics (default, 15)",
 		cyan("-m, --minqual")+" <float>  : Minimum quality threshold for filtering (optional)",
 		cyan("-M, --maxqual")+" <float>  : Maximum quality threshold for filtering (optional)",
+		cyan("-p, --minphred")+" <int>   : Quality threshold for 'lqcount' and 'lqpercent' metrics (default, 15)",
 		cyan("-H, --header")+" <string>  : Comma-separated list of metrics to add to headers (e.g., 'avgphred,maxee,length')",
 		cyan("-a, --ascending")+" <bool> : Sort sequences in ascending order of quality (default, false)",
 		cyan("-c, --compress")+" <int>   : Memory compression level for stdin-based mode (0=disabled, 1-22; default, 1)",
@@ -168,12 +208,14 @@ func helpFunc(cmd *cobra.Command, args []string) {
 		cyan("-v, --version")+"          : Show version information",
 		bold(yellow("Subcommands:")),
 		cyan("sort")+"       : Sort sequences by computing quality metrics from base qualities",
+		cyan("nosort")+"     : Estimate quality and optionally filter/annotate without sorting",
 		cyan("headersort")+" : Sort sequences using pre-computed quality scores in headers",
 		bold(yellow("Usage examples:")),
 		cyan("phredsort --metric avgphred --in input.fq.gz --out output.fq.gz"),
 		cyan("cat input.fq | phredsort --compress 0 -i - -o - > sorted.fq"),
 		cyan("phredsort -i inp.fq.gz -o out.fq.gz --metric avgphred --minqual 20 --header avgphred,maxee,lqpercent,length"),
 		cyan("phredsort headersort -i inp.fq.gz -o out.fq.gz --metric maxee"),
+		cyan("phredsort nosort --metric maxee --maxqual 1 --header maxee -i - -o - > output.fq"),
 		bold(yellow("More information:")),
 	)
 }
