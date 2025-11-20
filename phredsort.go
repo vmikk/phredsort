@@ -209,6 +209,7 @@ func main() {
 
 	// Add commands
 	rootCmd.AddCommand(defaultCmd)          // sort using quality estimation
+	rootCmd.AddCommand(NoSortCommand())     // estimate quality without sorting
 	rootCmd.AddCommand(HeaderSortCommand()) // sort using pre-computed quality scores
 
 	// Set help function
