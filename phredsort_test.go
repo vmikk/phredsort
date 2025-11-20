@@ -849,6 +849,151 @@ func TestSortStdin(t *testing.T) {
 	}
 }
 
+// TestRunNoSort verifies that runNoSort preserves input order while applying
+// quality filters and optional header annotations
+func TestRunNoSort(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "nosort_test_*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	createInput := func(records []*fastx.Record) string {
+		path := filepath.Join(tmpDir, "input.fq")
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		for _, record := range records {
+			fmt.Fprintf(f, "@%s\n%s\n+\n%s\n",
+				record.Name,
+				record.Seq.Seq,
+				record.Seq.Qual)
+		}
+		return path
+	}
+
+	tests := []struct {
+		name          string
+		records       []*fastx.Record
+		metric        QualityMetric
+		minPhred      int
+		minQual       float64
+		maxQual       float64
+		headerSpec    string
+		wantOrder     []string
+		wantFirstHead []string // substrings expected in first header (if any)
+	}{
+		{
+			name: "Order preserved without filtering",
+			records: []*fastx.Record{
+				createTestRecord("seq1", "ACGT", "IIII"), // high quality
+				createTestRecord("seq2", "ACGT", "$$$$"), // low quality
+				createTestRecord("seq3", "ACGT", "@@@@"), // medium quality
+			},
+			metric:   AvgPhred,
+			minPhred: DEFAULT_MIN_PHRED,
+			// No filtering on metric
+			minQual:   -math.MaxFloat64,
+			maxQual:   math.MaxFloat64,
+			headerSpec: "",
+			wantOrder: []string{"seq1", "seq2", "seq3"},
+		},
+		{
+			name: "Filtering and header metrics",
+			records: []*fastx.Record{
+				createTestRecord("seq1", "ACGT", "IIII"), // very high quality
+				createTestRecord("seq2", "ACGT", "$$$$"), // very low quality
+				createTestRecord("seq3", "ACGT", "@@@@"), // medium quality
+			},
+			metric:   AvgPhred,
+			minPhred: DEFAULT_MIN_PHRED,
+			// Reuse thresholds from TestSortStdin ("Sorting with quality filters"):
+			// only the medium-quality record should remain.
+			minQual:    30.0,
+			maxQual:    35.0,
+			headerSpec: "avgphred,length",
+			wantOrder:  []string{"seq3"},
+			wantFirstHead: []string{
+				"avgphred=",
+				"length=",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inPath := createInput(tt.records)
+			outPath := filepath.Join(tmpDir, "output.fq")
+
+			var headerMetrics []HeaderMetric
+			if tt.headerSpec != "" {
+				var err error
+				headerMetrics, err = parseHeaderMetrics(tt.headerSpec)
+				if err != nil {
+					t.Fatalf("parseHeaderMetrics(%q) error: %v", tt.headerSpec, err)
+				}
+			}
+
+			err := runNoSort(
+				inPath,
+				outPath,
+				tt.metric,
+				headerMetrics,
+				tt.minPhred,
+				tt.minQual,
+				tt.maxQual,
+			)
+			if err != nil {
+				t.Fatalf("runNoSort() error: %v", err)
+			}
+
+			// Read and verify output
+			reader, err := fastx.NewReader(seq.DNAredundant, outPath, fastx.DefaultIDRegexp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+
+			var gotOrder []string
+			var firstHeader string
+
+			for {
+				record, err := reader.Read()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if firstHeader == "" {
+					firstHeader = string(record.Name)
+				}
+				name := strings.Split(string(record.Name), " ")[0]
+				gotOrder = append(gotOrder, name)
+			}
+
+			if !reflect.DeepEqual(gotOrder, tt.wantOrder) {
+				t.Errorf("runNoSort() got order = %v, want %v", gotOrder, tt.wantOrder)
+			}
+
+			// If we expect specific annotations, verify them on the first header
+			if len(tt.wantFirstHead) > 0 {
+				if firstHeader == "" {
+					t.Fatalf("expected at least one record in output to inspect header")
+				}
+				for _, substr := range tt.wantFirstHead {
+					if !strings.Contains(firstHeader, substr) {
+						t.Errorf("header %q missing expected substring %q", firstHeader, substr)
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestRunDefaultCommand_Stdin verifies that runDefaultCommand calls sortStdin
 // when the input is set to "-" (stdin) and that sorting succeeds
 func TestRunDefaultCommand_Stdin(t *testing.T) {
