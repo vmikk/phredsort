@@ -1,3 +1,5 @@
+// Subcommand (`phredsort headersort`) for sorting sequences using pre-computed quality scores from headers
+
 package main
 
 import (
