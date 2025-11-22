@@ -41,20 +41,9 @@ not perform any reordering of records.`,
 			}
 
 			// Validate metric flag
-			var qualityMetric QualityMetric
-			switch strings.ToLower(metric) {
-			case "avgphred":
-				qualityMetric = AvgPhred
-			case "maxee":
-				qualityMetric = MaxEE
-			case "meep":
-				qualityMetric = Meep
-			case "lqcount":
-				qualityMetric = LQCount
-			case "lqpercent":
-				qualityMetric = LQPercent
-			default:
-				return fmt.Errorf("invalid metric '%s'", metric)
+			qualityMetric, err := validateMetric(metric)
+			if err != nil {
+				return err
 			}
 
 			// Parse header metrics
