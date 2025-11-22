@@ -40,20 +40,9 @@ func runDefaultCommand(cmd *cobra.Command, args []string) {
 	}
 
 	// Validate metric flag
-	var qualityMetric QualityMetric
-	switch strings.ToLower(metric) {
-	case "avgphred":
-		qualityMetric = AvgPhred
-	case "maxee":
-		qualityMetric = MaxEE
-	case "meep":
-		qualityMetric = Meep
-	case "lqcount":
-		qualityMetric = LQCount
-	case "lqpercent":
-		qualityMetric = LQPercent
-	default:
-		fmt.Fprintf(os.Stderr, red("Error: invalid metric '%s'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent"), metric)
+	qualityMetric, err := validateMetric(metric)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, red("Error: "+err.Error()))
 		exitFunc(1)
 	}
 
