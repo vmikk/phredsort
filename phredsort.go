@@ -49,6 +49,31 @@ func (m QualityMetric) String() string {
 	}
 }
 
+// validateMetric parses and validates a metric string, returning the corresponding
+// QualityMetric enum value. Returns an error if the metric string is invalid
+//
+// Valid metric strings: "avgphred", "maxee", "meep", "lqcount", "lqpercent"
+//
+// Example:
+//   metric, err := validateMetric("avgphred") // Returns AvgPhred, nil
+//   metric, err := validateMetric("invalid")  // Returns AvgPhred, error
+func validateMetric(metricStr string) (QualityMetric, error) {
+	switch strings.ToLower(metricStr) {
+	case "avgphred":
+		return AvgPhred, nil
+	case "maxee":
+		return MaxEE, nil
+	case "meep":
+		return Meep, nil
+	case "lqcount":
+		return LQCount, nil
+	case "lqpercent":
+		return LQPercent, nil
+	default:
+		return AvgPhred, fmt.Errorf("invalid metric '%s'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent", metricStr)
+	}
+}
+
 // QualityRecord stores just the essential info for sorting
 type QualityRecord struct {
 	Offset  int64   // File offset for a record
