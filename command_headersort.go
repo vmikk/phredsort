@@ -90,7 +90,14 @@ func (list *PreSortRecordList) Less(i, j int) bool {
 	return natural.Less(list.items[i].ID, list.items[j].ID)
 }
 
-// parsePreSortRecord parses header to extract quality and size information
+// parsePreSortRecord parses a FASTQ/FASTA record header to extract quality metric
+// and size information. Supports both space-separated and semicolon-separated formats
+//
+// The function looks for metric annotations in the format "metric=value" (e.g., "maxee=2.5")
+// and size annotations as "size=value" (e.g., "size=100")
+//
+// Returns a PreSortRecord with parsed information, or an error if the required
+// metric is missing from the header
 func parsePreSortRecord(record *fastx.Record, metric QualityMetric) (*PreSortRecord, error) {
 	header := string(record.Name)
 	parts := strings.SplitN(header, " ", 2) // Split at first space
@@ -154,8 +161,15 @@ func parsePreSortRecord(record *fastx.Record, metric QualityMetric) (*PreSortRec
 	return result, nil
 }
 
-// HeaderSortCommand creates the `headersort` subcommand
-// which sorts sequences using pre-computed quality scores from headers
+// HeaderSortCommand creates the `headersort` subcommand which sorts sequences
+// using pre-computed quality scores stored in sequence headers
+//
+// This command is useful when quality metrics have already been calculated and
+// stored in headers (e.g., by a previous run of phredsort with --header flag)
+// It supports both space-separated (">seq1 maxee=2") and semicolon-separated
+// (">seq1;maxee=2") header formats
+//
+// Secondary sorting is performed by size annotation (if present) and sequence ID
 func HeaderSortCommand() *cobra.Command {
 	var (
 		inFile        string
@@ -199,6 +213,20 @@ by size annotation (if present, e.g., "size=123") and sequence ID.`,
 	return cmd
 }
 
+// runPresort reads FASTQ/FASTA records, extracts quality metrics from headers,
+// filters records based on quality thresholds, sorts them, and writes the
+// sorted output. This function requires that quality metrics are already present
+// in sequence headers
+//
+// Parameters:
+//   - inFile: Input sequence file path
+//   - outFile: Output sequence file path
+//   - metric: Quality metric to extract from headers and use for sorting
+//   - ascending: If true, sort in ascending order; if false, sort in descending order
+//   - minQual: Minimum quality threshold for filtering
+//   - maxQual: Maximum quality threshold for filtering
+//
+// Returns an error if file I/O fails or if a record is missing the required metric
 func runPresort(inFile, outFile string, metric QualityMetric, ascending bool, minQual, maxQual float64) error {
 	// Create reader with automatic format detection
 	reader, err := fastx.NewDefaultReader(inFile)
