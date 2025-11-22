@@ -113,7 +113,16 @@ var qualityCalculators = map[QualityMetric]QualityCalculator{
 	LQPercent: lqPercentWrapper,
 }
 
-// Calculate sequence quality
+// calculateQuality computes the quality metric for a FASTQ record based on the
+// specified metric type. This is the main entry point for quality calculations
+//
+// Parameters:
+//   - record: The FASTQ record containing sequence and quality scores
+//   - metric: The type of quality metric to calculate
+//   - minPhred: Minimum Phred threshold (used for lqcount and lqpercent metrics)
+//
+// Returns the calculated quality value. For empty quality strings, some metrics
+// return positive infinity to indicate invalid/undefined quality
 func calculateQuality(record *fastx.Record, metric QualityMetric, minPhred int) float64 {
 	if calcFunc, exists := qualityCalculators[metric]; exists {
 		return calcFunc(record.Seq.Qual, minPhred)
