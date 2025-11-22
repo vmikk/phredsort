@@ -175,20 +175,9 @@ semicolon-separated (">seq1;maxee=2") quality annotations. Secondary sorting is 
 by size annotation (if present, e.g., "size=123") and sequence ID.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Validate metric flag
-			var qualityMetric QualityMetric
-			switch strings.ToLower(metric) {
-			case "avgphred":
-				qualityMetric = AvgPhred
-			case "maxee":
-				qualityMetric = MaxEE
-			case "meep":
-				qualityMetric = Meep
-			case "lqcount":
-				qualityMetric = LQCount
-			case "lqpercent":
-				qualityMetric = LQPercent
-			default:
-				return fmt.Errorf("invalid metric '%s'", metric)
+			qualityMetric, err := validateMetric(metric)
+			if err != nil {
+				return err
 			}
 
 			return runPresort(inFile, outFile, qualityMetric, ascending, minQualFilter, maxQualFilter)
