@@ -31,7 +31,7 @@ const (
 	LQPercent
 )
 
-// Add this near the QualityMetric type definition at the top of the file
+// String returns the string representation of a QualityMetric
 func (m QualityMetric) String() string {
 	switch m {
 	case AvgPhred:
@@ -88,12 +88,13 @@ type QualityFloat struct {
 }
 
 // QualityFloatList is a slice of QualityFloat with sorting direction
+// It implements sort.Interface for sorting sequences by quality metrics
 type QualityFloatList struct {
 	items     []QualityFloat
 	ascending bool // true for ascending, false for descending
 }
 
-// New constructor function
+// NewQualityFloatList creates a new QualityFloatList with the given items and sort direction
 func NewQualityFloatList(items []QualityFloat, ascending bool) QualityFloatList {
 	return QualityFloatList{items: items, ascending: ascending}
 }
@@ -102,6 +103,11 @@ func (list QualityFloatList) Len() int { return len(list.items) }
 func (list QualityFloatList) Swap(i, j int) {
 	list.items[i], list.items[j] = list.items[j], list.items[i]
 }
+// Less implements sort.Interface. It determines the sort order based on the metric type:
+// - For AvgPhred (higher is better): default order is highest to lowest
+// - For MaxEE, Meep, LQCount, LQPercent (lower is better): default order is lowest to highest
+// - The ascending flag flips the default ordering
+// - Secondary sort is by name using natural ordering (e.g., seq1, seq2, seq10)
 func (list QualityFloatList) Less(i, j int) bool {
 	metric := list.getMetricFromValue()
 
