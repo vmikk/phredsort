@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strings"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/shenwei356/bio/seq"
@@ -17,14 +16,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// HeaderMetric represents additional metrics appended to FASTQ headers when
-// writing sorted output
-type HeaderMetric struct {
-	Name     string
-	IsLength bool
-}
 
-// The main sorting function logic (file-based mode or stdin-based mode)
+// runDefaultCommand is the main entry point for the default sort command.
+// It handles flag validation, metric parsing, and routes to either stdin-based
+// or file-based sorting depending on the input file parameter
+//
+// When inFile is "-", it uses sortStdin (which loads all records into memory)
+// Otherwise, it uses sortFile (which uses a two-pass approach for better memory efficiency)
 func runDefaultCommand(cmd *cobra.Command, args []string) {
 	// Check version flag
 	if version {
@@ -74,6 +72,22 @@ type CompressedFastqRecord struct {
 }
 
 
+// sortStdin reads FASTQ records from stdin, calculates quality metrics, sorts them,
+// and writes the sorted output to outFile. This function loads all records into memory,
+// making it suitable for smaller datasets
+//
+// When compLevel > 0, records are compressed using ZSTD to reduce memory usage
+// When compLevel == 0, records are stored uncompressed (faster but uses more memory)
+//
+// Parameters:
+//   - outFile: Output file path
+//   - ascending: If true, sort in ascending order; if false, sort in descending order
+//   - metric: Quality metric to use for sorting
+//   - compLevel: Compression level (0-22, 0 = disabled)
+//   - headerMetrics: Optional metrics to append to headers
+//   - minPhred: Minimum Phred threshold for lqcount/lqpercent calculations
+//   - minQualFilter: Minimum quality threshold for filtering
+//   - maxQualFilter: Maximum quality threshold for filtering
 func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel int, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64) {
 	reader, err := fastx.NewReader(seq.DNAredundant, "-", fastx.DefaultIDRegexp)
 	if err != nil {
@@ -213,6 +227,21 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 	}
 }
 
+// sortFile performs a two-pass sort of FASTQ records from a file. The first pass
+// calculates quality scores and determines sort order. The second pass reads records
+// in sorted order and writes them to the output file. This approach is more memory-efficient
+// than sortStdin for large files, as it doesn't require loading all records into memory simultaneously
+//
+// Parameters:
+//   - inFile: Input FASTQ file path
+//   - outFile: Output FASTQ file path
+//   - ascending: If true, sort in ascending order; if false, sort in descending order
+//   - metric: Quality metric to use for sorting
+//   - compLevel: Compression level (0-22, 0 = disabled)
+//   - headerMetrics: Optional metrics to append to headers
+//   - minPhred: Minimum Phred threshold for lqcount/lqpercent calculations
+//   - minQualFilter: Minimum quality threshold for filtering
+//   - maxQualFilter: Maximum quality threshold for filtering
 func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, compLevel int, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64) {
 	reader, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
