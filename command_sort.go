@@ -63,7 +63,7 @@ func runDefaultCommand(cmd *cobra.Command, args []string) {
 	if inFile == "-" {
 		sortStdin(outFile, ascending, qualityMetric, compLevel, parsedHeaderMetrics, minPhred, minQualFilter, maxQualFilter)
 	} else {
-		sortFile(inFile, outFile, ascending, qualityMetric, parsedHeaderMetrics, minPhred, minQualFilter, maxQualFilter)
+		sortFile(inFile, outFile, ascending, qualityMetric, compLevel, parsedHeaderMetrics, minPhred, minQualFilter, maxQualFilter)
 	}
 }
 
@@ -213,7 +213,7 @@ func sortStdin(outFile string, ascending bool, metric QualityMetric, compLevel i
 	}
 }
 
-func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64) {
+func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, compLevel int, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64) {
 	reader, err := fastx.NewReader(seq.DNAredundant, inFile, fastx.DefaultIDRegexp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
@@ -261,22 +261,7 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 	}
 	defer reader2.Close()
 
-	records := make(map[int64]*fastx.Record)
-	var offset int64 = 0
-	for {
-		record, err := reader2.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
-			exitFunc(1)
-		}
-		records[offset] = record.Clone()
-		offset++
-	}
-
-	// Open output file and write sorted records
+	// Open output file early to be ready for writing
 	outfh, err := xopen.Wopen(outFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating output file: %v\n"), err)
@@ -284,14 +269,93 @@ func sortFile(inFile, outFile string, ascending bool, metric QualityMetric, head
 	}
 	defer outfh.Close()
 
-	// Output in sorted order
-	for _, qf := range qualityScores {
-		offset := name2offset[qf.Name]
-		record, ok := records[offset]
-		if !ok {
-			fmt.Fprintf(os.Stderr, red("Error: could not find record for %s\n"), qf.Name)
+	if compLevel > 0 {
+		// Use ZSTD compression for memory efficiency
+		encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(compLevel)))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, red("Error creating ZSTD encoder: %v\n"), err)
 			exitFunc(1)
 		}
-		writeRecord(outfh, record, qf.Value, headerMetrics, metric, minPhred, minQualFilter, maxQualFilter)
+		defer encoder.Close()
+
+		decoder, err := zstd.NewReader(nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, red("Error creating ZSTD decoder: %v\n"), err)
+			exitFunc(1)
+		}
+		defer decoder.Close()
+
+		compressedRecords := make(map[int64][]byte)
+		var offset int64 = 0
+		for {
+			record, err := reader2.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
+				exitFunc(1)
+			}
+
+			// Compress sequence and quality scores together
+			data := append(record.Seq.Seq, record.Seq.Qual...)
+			compressed := encoder.EncodeAll(data, make([]byte, 0, len(data)))
+			compressedRecords[offset] = compressed
+			offset++
+		}
+
+		// Output in sorted order
+		for _, qf := range qualityScores {
+			offset := name2offset[qf.Name]
+			compData, ok := compressedRecords[offset]
+			if !ok {
+				fmt.Fprintf(os.Stderr, red("Error: could not find record for %s\n"), qf.Name)
+				exitFunc(1)
+			}
+
+			decompressed, err := decoder.DecodeAll(compData, nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, red("Error decompressing record: %v\n"), err)
+				exitFunc(1)
+			}
+
+			seqLen := len(decompressed) / 2
+			record := &fastx.Record{
+				Name: []byte(qf.Name), // Reconstruct name from QualityFloat
+				Seq: &seq.Seq{
+					Seq:  decompressed[:seqLen],
+					Qual: decompressed[seqLen:],
+				},
+			}
+			writeRecord(outfh, record, qf.Value, headerMetrics, metric, minPhred, minQualFilter, maxQualFilter)
+		}
+
+	} else {
+		// Uncompressed mode
+		records := make(map[int64]*fastx.Record)
+		var offset int64 = 0
+		for {
+			record, err := reader2.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
+				exitFunc(1)
+			}
+			records[offset] = record.Clone()
+			offset++
+		}
+
+		// Output in sorted order
+		for _, qf := range qualityScores {
+			offset := name2offset[qf.Name]
+			record, ok := records[offset]
+			if !ok {
+				fmt.Fprintf(os.Stderr, red("Error: could not find record for %s\n"), qf.Name)
+				exitFunc(1)
+			}
+			writeRecord(outfh, record, qf.Value, headerMetrics, metric, minPhred, minQualFilter, maxQualFilter)
+		}
 	}
 }
