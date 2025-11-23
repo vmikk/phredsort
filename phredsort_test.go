@@ -488,6 +488,7 @@ func TestSortFile(t *testing.T) {
 		records       []*fastx.Record
 		metric        QualityMetric
 		ascending     bool
+		compLevel     int
 		headerMetrics []HeaderMetric
 		minPhred      int
 		minQual       float64
@@ -593,6 +594,7 @@ func TestSortFile(t *testing.T) {
 				outFile.Name(),
 				tt.ascending,
 				tt.metric,
+				tt.compLevel,
 				tt.headerMetrics,
 				tt.minPhred,
 				tt.minQual,
