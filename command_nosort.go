@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"strings"
 
 	"github.com/shenwei356/bio/seq"
 	"github.com/shenwei356/bio/seqio/fastx"
@@ -17,6 +16,11 @@ import (
 
 // NoSortCommand creates the `nosort` subcommand which estimates quality metrics
 // and optionally filters/annotates sequences without changing their order.
+//
+// This command is useful when you want to add quality annotations to headers or
+// filter sequences based on quality thresholds, but don't need to reorder them.
+// It processes records in a streaming fashion, making it memory-efficient for
+// large input files
 func NoSortCommand() *cobra.Command {
 	var (
 		inFile        string
@@ -81,7 +85,22 @@ not perform any reordering of records.`,
 
 // runNoSort streams records from input to output, computing the requested
 // quality metric for each record, applying quality filters, and optionally
-// appending additional metrics to the header. Record order is preserved.
+// appending additional metrics to the header. Record order is preserved
+//
+// This function reads records sequentially and writes them immediately after
+// processing, making it suitable for very large files that don't fit in memory.
+// Records that don't meet the quality thresholds are filtered out and not written
+//
+// Parameters:
+//   - inFile: Input FASTQ file path (use "-" for stdin)
+//   - outFile: Output FASTQ file path (use "-" for stdout)
+//   - metric: Quality metric to calculate for filtering
+//   - headerMetrics: Optional metrics to append to headers
+//   - minPhred: Minimum Phred threshold for lqcount/lqpercent calculations
+//   - minQualFilter: Minimum quality threshold for filtering
+//   - maxQualFilter: Maximum quality threshold for filtering
+//
+// Returns an error if file I/O operations fail
 func runNoSort(
 	inFile, outFile string,
 	metric QualityMetric,
@@ -117,5 +136,3 @@ func runNoSort(
 
 	return nil
 }
-
-
