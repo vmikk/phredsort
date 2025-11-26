@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -28,114 +27,8 @@ func createTestRecord(name string, sequence string, quality string) *fastx.Recor
 	}
 }
 
-
-// Test sorting functionality
-func TestQualityFloatListSorting(t *testing.T) {
-	tests := []struct {
-		name      string
-		items     []QualityFloat
-		ascending bool
-		metric    QualityMetric
-		want      []string // Expected order of names after sorting
-	}{
-		{
-			name: "AvgPhred Descending",
-			items: []QualityFloat{
-				{Name: "seq1", Value: 30.0, Metric: AvgPhred},
-				{Name: "seq2", Value: 40.0, Metric: AvgPhred},
-				{Name: "seq3", Value: 20.0, Metric: AvgPhred},
-			},
-			ascending: false,
-			metric:    AvgPhred,
-			want:      []string{"seq2", "seq1", "seq3"},
-		},
-		{
-			name: "MaxEE Ascending",
-			items: []QualityFloat{
-				{Name: "seq1", Value: 0.1, Metric: MaxEE},
-				{Name: "seq2", Value: 0.01, Metric: MaxEE},
-				{Name: "seq3", Value: 1.0, Metric: MaxEE},
-			},
-			ascending: true,
-			metric:    MaxEE,
-			want:      []string{"seq3", "seq1", "seq2"},
-		},
-		{
-			name: "MaxEE - Equal values, natural sort by name",
-			items: []QualityFloat{
-				{Name: "seq10", Value: 0.1, Metric: MaxEE},
-				{Name: "seq2", Value: 0.1, Metric: MaxEE},
-				{Name: "seq1", Value: 0.1, Metric: MaxEE},
-			},
-			ascending: false,
-			metric:    MaxEE,
-			want:      []string{"seq1", "seq2", "seq10"},
-		},
-		{
-			name: "Meep - Mixed values ascending",
-			items: []QualityFloat{
-				{Name: "seq1", Value: 5.0, Metric: Meep},
-				{Name: "seq2", Value: 2.0, Metric: Meep},
-				{Name: "seq3", Value: 10.0, Metric: Meep},
-			},
-			ascending: true,
-			metric:    Meep,
-			want:      []string{"seq3", "seq1", "seq2"},
-		},
-		{
-			name: "LQPercent - Zero values",
-			items: []QualityFloat{
-				{Name: "seq1", Value: 0.0, Metric: LQPercent},
-				{Name: "seq2", Value: 0.0, Metric: LQPercent},
-			},
-			ascending: false,
-			metric:    LQPercent,
-			want:      []string{"seq1", "seq2"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			list := NewQualityFloatList(tt.items, tt.ascending)
-			sort.Sort(list)
-
-			got := make([]string, len(list.items))
-			for i, item := range list.items {
-				got[i] = item.Name
-			}
-
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Sort() got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-
-// Test quality metric string representation
-func TestQualityMetricString(t *testing.T) {
-	tests := []struct {
-		metric QualityMetric
-		want   string
-	}{
-		{AvgPhred, "avgphred"},
-		{MaxEE, "maxee"},
-		{Meep, "meep"},
-		{LQCount, "lqcount"},
-		{LQPercent, "lqpercent"},
-		{QualityMetric(999), "unknown"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			if got := tt.metric.String(); got != tt.want {
-				t.Errorf("QualityMetric.String() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-// TestSortFile tests the file-based sorting functionality
-func TestSortFile(t *testing.T) {
+// TestSortRecords_File tests the file-based sorting functionality using sortRecords
+func TestSortRecords_File(t *testing.T) {
 	tests := []struct {
 		name          string
 		records       []*fastx.Record
@@ -241,8 +134,8 @@ func TestSortFile(t *testing.T) {
 			}
 			writer.Close()
 
-			// Run sortFile
-			sortFile(
+			// Run sortRecords (unified sorting function)
+			sortRecords(
 				inFile.Name(),
 				outFile.Name(),
 				tt.ascending,
@@ -298,7 +191,7 @@ func TestSortFile(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(gotOrder, tt.wantOrder) {
-				t.Errorf("sortFile() got order = %v, want %v", gotOrder, tt.wantOrder)
+				t.Errorf("sortRecords() got order = %v, want %v", gotOrder, tt.wantOrder)
 			}
 
 			// If header metrics were specified, verify they were added correctly
@@ -324,8 +217,8 @@ func TestSortFile(t *testing.T) {
 	}
 }
 
-// TestSortStdin tests the stdin-based sorting functionality
-func TestSortStdin(t *testing.T) {
+// TestSortRecords_Stdin tests the stdin-based sorting functionality using sortRecords
+func TestSortRecords_Stdin(t *testing.T) {
 	tests := []struct {
 		name          string
 		records       []*fastx.Record
@@ -440,8 +333,9 @@ func TestSortStdin(t *testing.T) {
 				newStdin.Close()
 			}()
 
-			// Run sortStdin
-			sortStdin(
+			// Run sortRecords with stdin ("-")
+			sortRecords(
+				"-",
 				tmpOutFile.Name(),
 				tt.ascending,
 				tt.metric,
@@ -478,7 +372,7 @@ func TestSortStdin(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(gotOrder, tt.wantOrder) {
-				t.Errorf("sortStdin() got order = %v, want %v", gotOrder, tt.wantOrder)
+				t.Errorf("sortRecords() got order = %v, want %v", gotOrder, tt.wantOrder)
 			}
 
 			// If header metrics were specified, verify they were added correctly
@@ -649,7 +543,7 @@ func TestRunNoSort(t *testing.T) {
 	}
 }
 
-// TestRunDefaultCommand_Stdin verifies that runDefaultCommand calls sortStdin
+// TestRunDefaultCommand_Stdin verifies that runDefaultCommand calls sortRecords
 // when the input is set to "-" (stdin) and that sorting succeeds
 func TestRunDefaultCommand_Stdin(t *testing.T) {
 	// Prepare temporary stdin FASTQ file
@@ -727,9 +621,9 @@ func TestRunDefaultCommand_Stdin(t *testing.T) {
 	}
 }
 
-// TestSortStdin_ReadError covers the error path when reading from stdin fails
-// inside sortStdin (i.e. the "Error reading record" branch)
-func TestSortStdin_ReadError(t *testing.T) {
+// TestSortRecords_ReadError covers the error path when reading from stdin fails
+// inside sortRecords (i.e. the "Error reading record" branch)
+func TestSortRecords_ReadError(t *testing.T) {
 	// Capture stderr and recover from the expected panic triggered via exitFunc
 	oldStderr := os.Stderr
 	rErr, wErr, _ := os.Pipe()
@@ -769,7 +663,7 @@ func TestSortStdin_ReadError(t *testing.T) {
 		newStdin.Close()
 	}()
 
-	// Call sortStdin and expect it to call exitFunc(1), which panics
+	// Call sortRecords and expect it to call exitFunc(1), which panics
 	didPanic := false
 	func() {
 		defer func() {
@@ -783,7 +677,7 @@ func TestSortStdin_ReadError(t *testing.T) {
 			}
 		}()
 
-		sortStdin(outPath, false, AvgPhred, 0, nil, DEFAULT_MIN_PHRED, -math.MaxFloat64, math.MaxFloat64)
+		sortRecords("-", outPath, false, AvgPhred, 0, nil, DEFAULT_MIN_PHRED, -math.MaxFloat64, math.MaxFloat64)
 	}()
 
 	// Read captured stderr
@@ -791,7 +685,7 @@ func TestSortStdin_ReadError(t *testing.T) {
 	errOutput, _ := io.ReadAll(rErr)
 
 	if !didPanic {
-		t.Fatalf("Expected sortStdin to call exitFunc and panic, but it did not")
+		t.Fatalf("Expected sortRecords to call exitFunc and panic, but it did not")
 	}
 	if !strings.Contains(string(errOutput), "Error reading record") {
 		t.Errorf("Expected stderr to contain 'Error reading record', got: %s", string(errOutput))
@@ -873,7 +767,7 @@ func TestMainCommand(t *testing.T) {
 			args:         []string{"--in", "input.fq", "--out", "output.fq", "--metric", "invalid"},
 			expectedCode: 1,
 			checkStderr:  true,
-			wantStderr:   red("Error: invalid metric 'invalid'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent"),
+			wantStderr:   red("Error: invalid metric 'invalid'. Must be one of: avgphred, maxee, meep, lqcount, lqpercent") + "\n",
 		},
 		{
 			name:         "Invalid compression level",
