@@ -149,6 +149,71 @@ func (list QualityFloatList) Items() []QualityFloat {
 	return list.items
 }
 
+// QualityIndex is a memory-efficient alternative to QualityFloat for sorting.
+// Uses int32 index (4 bytes) + float32 value (4 bytes) = 8 bytes total
+// compared to QualityFloat which uses ~50+ bytes due to string storage
+type QualityIndex struct {
+	Index int32   // Position in records slice
+	Value float32 // Quality score (float32 provides sufficient precision)
+}
+
+// QualityIndexList implements sort.Interface for memory-efficient sorting.
+// It references an external names slice for natural sort tie-breaking
+type QualityIndexList struct {
+	items     []QualityIndex
+	names     []string      // External reference for tie-breaking
+	ascending bool
+	metric    QualityMetric
+}
+
+// NewQualityIndexList creates a new QualityIndexList with the given items and sort direction
+func NewQualityIndexList(items []QualityIndex, names []string, ascending bool, metric QualityMetric) *QualityIndexList {
+	return &QualityIndexList{
+		items:     items,
+		names:     names,
+		ascending: ascending,
+		metric:    metric,
+	}
+}
+
+func (list *QualityIndexList) Len() int { return len(list.items) }
+func (list *QualityIndexList) Swap(i, j int) {
+	list.items[i], list.items[j] = list.items[j], list.items[i]
+}
+
+// Less implements sort.Interface with the same semantics as QualityFloatList
+func (list *QualityIndexList) Less(i, j int) bool {
+	vi, vj := list.items[i].Value, list.items[j].Value
+
+	var result bool
+	if list.metric == MaxEE || list.metric == Meep || list.metric == LQCount || list.metric == LQPercent {
+		// For these metrics, lower values indicate better quality
+		if vi != vj {
+			result = vi < vj
+		} else {
+			// Tie-break using natural sort on names
+			result = natural.Less(list.names[list.items[i].Index], list.names[list.items[j].Index])
+		}
+	} else {
+		// For AvgPhred and other metrics, higher values indicate better quality
+		if vi != vj {
+			result = vi > vj
+		} else {
+			result = natural.Less(list.names[list.items[i].Index], list.names[list.items[j].Index])
+		}
+	}
+
+	if list.ascending {
+		return !result
+	}
+	return result
+}
+
+// Items returns the underlying items slice
+func (list *QualityIndexList) Items() []QualityIndex {
+	return list.items
+}
+
 // Define color functions
 var (
 	bold   = color.New(color.Bold).SprintFunc()
