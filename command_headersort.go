@@ -16,7 +16,84 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Regular expressions for header parsing
+var (
+	spaceMetricRe = regexp.MustCompile(`\s+(\w+)=(\d+\.?\d*)`)
+	semiMetricRe  = regexp.MustCompile(`;(\w+)=(\d+\.?\d*)`)
+	sizeRe        = regexp.MustCompile(`(?:\s|;)size=(\d+)`)
+)
+
+// HeaderSortIndex is a memory-efficient struct for sorting pre-computed headers.
+// Uses index-based approach to minimize per-record memory overhead.
+type HeaderSortIndex struct {
+	Index   int32   // Position in records slice
+	Quality float32 // Parsed quality value from header
+	Size    int32   // Parsed size value from header (0 if not present)
+	HasSize bool    // Whether size was present in header
+}
+
+// HeaderSortIndexList implements sort.Interface for memory-efficient header-based sorting
+type HeaderSortIndexList struct {
+	items     []HeaderSortIndex
+	ids       []string // External reference for tie-breaking (sequence IDs)
+	ascending bool
+	metric    QualityMetric
+}
+
+// NewHeaderSortIndexList creates a new HeaderSortIndexList
+func NewHeaderSortIndexList(items []HeaderSortIndex, ids []string, ascending bool, metric QualityMetric) *HeaderSortIndexList {
+	return &HeaderSortIndexList{
+		items:     items,
+		ids:       ids,
+		ascending: ascending,
+		metric:    metric,
+	}
+}
+
+func (list *HeaderSortIndexList) Len() int { return len(list.items) }
+func (list *HeaderSortIndexList) Swap(i, j int) {
+	list.items[i], list.items[j] = list.items[j], list.items[i]
+}
+
+func (list *HeaderSortIndexList) Less(i, j int) bool {
+	qi, qj := list.items[i].Quality, list.items[j].Quality
+
+	// Primary sort by quality
+	if qi != qj {
+		var result bool
+		if list.metric == MaxEE || list.metric == Meep || list.metric == LQCount || list.metric == LQPercent {
+			result = qi < qj
+		} else {
+			result = qi > qj
+		}
+		if list.ascending {
+			return !result
+		}
+		return result
+	}
+
+	// Secondary sort by size (if both have size)
+	if list.items[i].HasSize && list.items[j].HasSize {
+		si, sj := list.items[i].Size, list.items[j].Size
+		if si != sj {
+			if list.ascending {
+				return si < sj
+			}
+			return si > sj
+		}
+	}
+
+	// Tertiary sort by ID using natural ordering
+	return natural.Less(list.ids[list.items[i].Index], list.ids[list.items[j].Index])
+}
+
+// Items returns the underlying items slice
+func (list *HeaderSortIndexList) Items() []HeaderSortIndex {
+	return list.items
+}
+
 // PreSortRecord represents a sequence record with pre-computed quality
+// Kept for backward compatibility with parsePreSortRecord function used in tests
 type PreSortRecord struct {
 	ID      string
 	Name    string
@@ -27,98 +104,21 @@ type PreSortRecord struct {
 	HasQual bool
 }
 
-// Regular expressions for header parsing
-var (
-	spaceMetricRe = regexp.MustCompile(`\s+(\w+)=(\d+\.?\d*)`)
-	semiMetricRe  = regexp.MustCompile(`;(\w+)=(\d+\.?\d*)`)
-	sizeRe        = regexp.MustCompile(`(?:\s|;)size=(\d+)`)
-)
-
-// PreSortRecordList for sorting
-type PreSortRecordList struct {
-	items     []*PreSortRecord
-	ascending bool
-	metric    QualityMetric
-}
-
-func NewPreSortRecordList(items []*PreSortRecord, ascending bool, metric QualityMetric) *PreSortRecordList {
-	return &PreSortRecordList{
-		items:     items,
-		ascending: ascending,
-		metric:    metric,
-	}
-}
-
-func (list *PreSortRecordList) Len() int { return len(list.items) }
-func (list *PreSortRecordList) Swap(i, j int) {
-	list.items[i], list.items[j] = list.items[j], list.items[i]
-}
-func (list *PreSortRecordList) Less(i, j int) bool {
-	// Primary sort by quality, using the same semantics as QualityFloatList:
-	// - For AvgPhred (higher is better), default (ascending=false) orders from
-	//   highest to lowest.
-	// - For MaxEE, Meep, LQCount, LQPercent (lower is better), default
-	//   (ascending=false) orders from lowest to highest.
-	// The "ascending" flag flips this default ordering.
-	if list.items[i].Quality != list.items[j].Quality {
-		var result bool
-		if list.metric == MaxEE || list.metric == Meep || list.metric == LQCount || list.metric == LQPercent {
-			// For these metrics, lower values indicate better quality.
-			result = list.items[i].Quality < list.items[j].Quality
-		} else {
-			// For AvgPhred and other metrics where higher is better.
-			result = list.items[i].Quality > list.items[j].Quality
-		}
-
-		if list.ascending {
-			return !result
-		}
-		return result
-	}
-
-	// Secondary sort by size (if both have size)
-	if list.items[i].HasSize && list.items[j].HasSize {
-		if list.items[i].Size != list.items[j].Size {
-			if list.ascending {
-				return list.items[i].Size < list.items[j].Size
-			}
-			return list.items[i].Size > list.items[j].Size
-		}
-	}
-
-	// Tertiary sort by ID
-	return natural.Less(list.items[i].ID, list.items[j].ID)
-}
-
-// parsePreSortRecord parses a FASTQ/FASTA record header to extract quality metric
-// and size information. Supports both space-separated and semicolon-separated formats
-//
-// The function looks for metric annotations in the format "metric=value" (e.g., "maxee=2.5")
-// and size annotations as "size=value" (e.g., "size=100")
-//
-// Returns a PreSortRecord with parsed information, or an error if the required
-// metric is missing from the header
-func parsePreSortRecord(record *fastx.Record, metric QualityMetric) (*PreSortRecord, error) {
-	header := string(record.Name)
-	parts := strings.SplitN(header, " ", 2) // Split at first space
-	id := parts[0]
+// parseHeaderInfo extracts quality metric, size, and ID from a record header.
+// Returns the parsed values for use with index-based sorting.
+// This is a more efficient version that doesn't allocate a full PreSortRecord.
+func parseHeaderInfo(header string, metric QualityMetric) (id string, quality float32, size int32, hasQual bool, hasSize bool) {
+	parts := strings.SplitN(header, " ", 2)
+	id = parts[0]
 	if strings.HasPrefix(id, ">") || strings.HasPrefix(id, "@") {
 		id = id[1:]
 	}
 
-	result := &PreSortRecord{
-		ID:      id,
-		Name:    header,
-		Record:  record,
-		HasQual: false,
-		HasSize: false,
-	}
-
 	// Try to find size annotation
 	if sizeMatch := sizeRe.FindStringSubmatch(header); sizeMatch != nil {
-		if size, err := strconv.Atoi(sizeMatch[1]); err == nil {
-			result.Size = size
-			result.HasSize = true
+		if s, err := strconv.Atoi(sizeMatch[1]); err == nil {
+			size = int32(s)
+			hasSize = true
 		}
 	}
 
@@ -152,13 +152,39 @@ func parsePreSortRecord(record *fastx.Record, metric QualityMetric) (*PreSortRec
 	}
 
 	if found {
-		if quality, err := strconv.ParseFloat(qualityStr, 64); err == nil {
-			result.Quality = quality
-			result.HasQual = true
+		if q, err := strconv.ParseFloat(qualityStr, 32); err == nil {
+			quality = float32(q)
+			hasQual = true
 		}
 	}
 
-	return result, nil
+	return
+}
+
+// parsePreSortRecord parses a FASTQ/FASTA record header to extract quality metric
+// and size information. Supports both space-separated and semicolon-separated formats
+//
+// The function looks for metric annotations in the format "metric=value" (e.g., "maxee=2.5")
+// and size annotations as "size=value" (e.g., "size=100")
+//
+// Returns a PreSortRecord with parsed information, or an error if the required
+// metric is missing from the header
+//
+// Note: This function is kept for backward compatibility with tests.
+// The new index-based sorting uses parseHeaderInfo instead.
+func parsePreSortRecord(record *fastx.Record, metric QualityMetric) (*PreSortRecord, error) {
+	header := string(record.Name)
+	id, quality, size, hasQual, hasSize := parseHeaderInfo(header, metric)
+
+	return &PreSortRecord{
+		ID:      id,
+		Name:    header,
+		Record:  record,
+		Quality: float64(quality),
+		Size:    int(size),
+		HasQual: hasQual,
+		HasSize: hasSize,
+	}, nil
 }
 
 // HeaderSortCommand creates the `headersort` subcommand which sorts sequences
@@ -218,6 +244,10 @@ by size annotation (if present, e.g., "size=123") and sequence ID.`,
 // sorted output. This function requires that quality metrics are already present
 // in sequence headers
 //
+// Memory optimization: Uses index-based sorting with slices instead of storing
+// full PreSortRecord structs. Records are stored in a slice and referenced by
+// integer indices during sorting.
+//
 // Parameters:
 //   - inFile: Input sequence file path
 //   - outFile: Output sequence file path
@@ -242,43 +272,55 @@ func runPresort(inFile, outFile string, metric QualityMetric, ascending bool, mi
 	}
 	defer outfh.Close()
 
-	// Read and parse all records
-	var records []*PreSortRecord
+	// Memory-efficient storage using slices and index-based sorting
+	records := make([]*fastx.Record, 0, 10000)
+	ids := make([]string, 0, 10000)
+	sortIndices := make([]HeaderSortIndex, 0, 10000)
+
+	minQual32 := float32(minQual)
+	maxQual32 := float32(maxQual)
 
 	// Use ChunkChan for asynchronous reading with reasonable buffer sizes
 	bufferSize := 100 // Number of chunks to buffer
 	chunkSize := 1000 // Records per chunk
 
+	var idx int32 = 0
 	for chunk := range reader.ChunkChan(bufferSize, chunkSize) {
 		if chunk.Err != nil {
 			return fmt.Errorf("error reading chunk: %v", chunk.Err)
 		}
 
 		for _, record := range chunk.Data {
-			// No need to clone since ChunkChan already provides copies
-			presortRecord, err := parsePreSortRecord(record, metric)
-			if err != nil {
-				return fmt.Errorf("error parsing record: %v", err)
-			}
+			header := string(record.Name)
+			id, quality, size, hasQual, hasSize := parseHeaderInfo(header, metric)
 
-			if !presortRecord.HasQual {
-				return fmt.Errorf("record missing required quality metric (%s): %s", metric, presortRecord.Name)
+			if !hasQual {
+				return fmt.Errorf("record missing required quality metric (%s): %s", metric, header)
 			}
 
 			// Apply quality filters
-			if presortRecord.Quality >= minQual && presortRecord.Quality <= maxQual {
-				records = append(records, presortRecord)
+			if quality >= minQual32 && quality <= maxQual32 {
+				// Store record and add to sort indices
+				records = append(records, record) // ChunkChan already provides copies
+				ids = append(ids, id)
+				sortIndices = append(sortIndices, HeaderSortIndex{
+					Index:   idx,
+					Quality: quality,
+					Size:    size,
+					HasSize: hasSize,
+				})
+				idx++
 			}
 		}
 	}
 
-	// Sort records
-	recordList := NewPreSortRecordList(records, ascending, metric)
-	sort.Sort(recordList)
+	// Sort using index-based sorting
+	sortList := NewHeaderSortIndexList(sortIndices, ids, ascending, metric)
+	sort.Sort(sortList)
 
-	// Write sorted records using buffered writer
-	for _, record := range recordList.items {
-		record.Record.FormatToWriter(outfh, 0)
+	// Write sorted records using indices
+	for _, si := range sortList.Items() {
+		records[si.Index].FormatToWriter(outfh, 0)
 	}
 
 	return nil
