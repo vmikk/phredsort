@@ -280,8 +280,8 @@ func main() {
 	//  phredsort sort -i in.fq -o out.fq ...
 
 	rootFlags := rootCmd.Flags()
-	rootFlags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
-	rootFlags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
+	rootFlags.StringVarP(&inFile, "in", "i", "-", "Input FASTQ file (default: stdin)")
+	rootFlags.StringVarP(&outFile, "out", "o", "-", "Output FASTQ file (default: stdout)")
 	rootFlags.StringVarP(&metric, "metric", "s", "avgphred", "Quality metric (avgphred, maxee, meep, lqcount, lqpercent)")
 	rootFlags.IntVarP(&minPhred, "minphred", "p", DEFAULT_MIN_PHRED, "Quality threshold for 'lqcount' and 'lqpercent' metrics")
 	rootFlags.Float64VarP(&minQualFilter, "minqual", "m", -math.MaxFloat64, "Minimum quality threshold for filtering")
@@ -292,8 +292,8 @@ func main() {
 	rootFlags.BoolVarP(&version, "version", "v", false, "Show version information")
 
 	sortFlags := defaultCmd.Flags()
-	sortFlags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use - for stdin)")
-	sortFlags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required)")
+	sortFlags.StringVarP(&inFile, "in", "i", "-", "Input FASTQ file (default: stdin)")
+	sortFlags.StringVarP(&outFile, "out", "o", "-", "Output FASTQ file (default: stdout)")
 	sortFlags.StringVarP(&metric, "metric", "s", "avgphred", "Quality metric (avgphred, maxee, meep, lqcount, lqpercent)")
 	sortFlags.IntVarP(&minPhred, "minphred", "p", DEFAULT_MIN_PHRED, "Quality threshold for 'lqcount' and 'lqpercent' metrics")
 	sortFlags.Float64VarP(&minQualFilter, "minqual", "m", -math.MaxFloat64, "Minimum quality threshold for filtering")
