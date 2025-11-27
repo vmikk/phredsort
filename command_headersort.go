@@ -226,15 +226,12 @@ by size annotation (if present, e.g., "size=123") and sequence ID.`,
 
 	// Define flags
 	flags := cmd.Flags()
-	flags.StringVarP(&inFile, "in", "i", "", "Input sequence file (required)")
-	flags.StringVarP(&outFile, "out", "o", "", "Output sequence file (required)")
+	flags.StringVarP(&inFile, "in", "i", "-", "Input sequence file (default: stdin)")
+	flags.StringVarP(&outFile, "out", "o", "-", "Output sequence file (default: stdout)")
 	flags.StringVarP(&metric, "metric", "s", "avgphred", "Quality metric to use from headers")
 	flags.BoolVarP(&ascending, "ascending", "a", false, "Sort in ascending order")
 	flags.Float64VarP(&minQualFilter, "minqual", "m", -math.MaxFloat64, "Minimum quality threshold")
 	flags.Float64VarP(&maxQualFilter, "maxqual", "M", math.MaxFloat64, "Maximum quality threshold")
-
-	cmd.MarkFlagRequired("in")
-	cmd.MarkFlagRequired("out")
 
 	return cmd
 }
