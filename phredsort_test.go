@@ -755,14 +755,6 @@ func TestMainCommand(t *testing.T) {
 			wantStdout:   fmt.Sprintf("phredsort %s\n", VERSION),
 		},
 		{
-			name:         "Missing required flags",
-			args:         []string{},
-			expectedCode: 1,
-			checkStderr:  true,
-			wantStderr: red("Error: input and output files are required") + "\n" +
-				red("Try 'phredsort --help' for more information") + "\n",
-		},
-		{
 			name:         "Invalid metric",
 			args:         []string{"--in", "input.fq", "--out", "output.fq", "--metric", "invalid"},
 			expectedCode: 1,
@@ -1163,7 +1155,7 @@ func TestHelpFuncSort(t *testing.T) {
 	if !strings.Contains(output, "phredsort sort - Sorts FASTQ based on computed quality metrics") {
 		t.Errorf("sort help output missing sort description, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Input FASTQ file (required, use '-' for stdin)") {
+	if !strings.Contains(output, "Input FASTQ file (default: stdin)") {
 		t.Errorf("sort help output missing input flag description, got:\n%s", output)
 	}
 	if !strings.Contains(output, "Quality metric (avgphred, maxee, meep, lqcount, lqpercent)") {
