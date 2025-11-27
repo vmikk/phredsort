@@ -40,9 +40,6 @@ annotate sequence headers, while preserving the original input order. Supports t
 same quality metrics and header annotations as the default sorting mode, but does
 not perform any reordering of records.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if inFile == "" || outFile == "" {
-				return fmt.Errorf("input and output files are required")
-			}
 
 			// Validate metric flag
 			qualityMetric, err := validateMetric(metric)
@@ -69,16 +66,13 @@ not perform any reordering of records.`,
 	}
 
 	flags := cmd.Flags()
-	flags.StringVarP(&inFile, "in", "i", "", "Input FASTQ file (required, use '-' for stdin)")
-	flags.StringVarP(&outFile, "out", "o", "", "Output FASTQ file (required, use '-' for stdout)")
+	flags.StringVarP(&inFile, "in", "i", "-", "Input FASTQ file (default: stdin)")
+	flags.StringVarP(&outFile, "out", "o", "-", "Output FASTQ file (default: stdout)")
 	flags.StringVarP(&metric, "metric", "s", "avgphred", "Quality metric (avgphred, maxee, meep, lqcount, lqpercent)")
 	flags.IntVarP(&minPhred, "minphred", "p", DEFAULT_MIN_PHRED, "Quality threshold for 'lqcount' and 'lqpercent' metrics")
 	flags.Float64VarP(&minQualFilter, "minqual", "m", -math.MaxFloat64, "Minimum quality threshold for filtering")
 	flags.Float64VarP(&maxQualFilter, "maxqual", "M", math.MaxFloat64, "Maximum quality threshold for filtering")
 	flags.StringVarP(&headerMetrics, "header", "H", "", "Comma-separated list of metrics to add to headers (e.g., 'avgphred,maxee,length')")
-
-	_ = cmd.MarkFlagRequired("in")
-	_ = cmd.MarkFlagRequired("out")
 
 	return cmd
 }
