@@ -112,13 +112,6 @@ func runDefaultCommand(cmd *cobra.Command, args []string) {
 		exitFunc(0)
 	}
 
-	// Check required flags
-	if inFile == "" || outFile == "" {
-		fmt.Fprintln(os.Stderr, red("Error: input and output files are required"))
-		fmt.Fprintln(os.Stderr, red("Try 'phredsort --help' for more information"))
-		exitFunc(1)
-	}
-
 	// Validate metric flag
 	qualityMetric, err := validateMetric(metric)
 	if err != nil {
