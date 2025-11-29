@@ -12,8 +12,11 @@ Basic usage:
 # Read from `input.fastq.gz` and write to `output.fastq.gz`
 phredsort -i input.fastq.gz -o output.fastq.gz
 
-# Read from stdin and write to stdout
-zcat input.fastq.gz | phredsort --in - --out - | less -S
+# Read from stdin and write to stdout (default when -i/-o not specified)
+zcat input.fastq.gz | phredsort | less -S
+
+# Explicit stdin/stdout (equivalent to above)
+zcat input.fastq.gz | phredsort -i - -o - | less -S
 ```
 
 ![phredsort help message](assets/phredsort.webp)
