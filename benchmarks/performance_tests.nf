@@ -1,9 +1,9 @@
 // Performance tests 
 
 // Usage:
-// ## `phredsort` and `phredsort_snappy` [old build] binaries should be in the `bin` directory in the current working directory
+// ## `phredsort` (and optionally `phredsort_snappy`) binaries should be in the `bin` directory
 // ## currently, performs one test at a time (change `-qs` to run tests in parallel)
-// 
+//
 // nextflow run performance_tests.nf \
 //   -resume -with-trace -qs 1 \
 //   --fastqgz 'data/*.fastq.gz' \
@@ -13,7 +13,7 @@
 // Define parameters
 params.fastqgz = 'data/*.fastq.gz'     // Set of compressed FASTQ files of different sizes
 params.fastq = 'data/*.fastq'          // Set of uncompressed FASTQ files
-params.compression_levels = 0..10      // ZSTD compression levels from 0 to 15
+params.compression_levels = 0..4       // ZSTD compression levels from 0 to 20
 // params.compression_levels = [0, 1, 3, 5]
 params.iterations = 3                  // Number of times to repeat each execution
 
@@ -39,6 +39,7 @@ process zstd_benchmark {
     """
 }
 
+/*
 // Snappy benchmark
 process snappy_benchmark {
     
@@ -59,6 +60,7 @@ process snappy_benchmark {
     touch done
     """
 }
+*/
 
 // File-based benchmarks
 process file_benchmark_compressed {
