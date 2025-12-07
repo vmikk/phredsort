@@ -17,24 +17,34 @@ params.compression_levels = 0..4       // ZSTD compression levels from 0 to 20
 // params.compression_levels = [0, 1, 3, 5]
 params.iterations = 3                  // Number of times to repeat each execution
 
+
 // ZSTD benchmark
-process zstd_benchmark {
+process phredsorting {
     
-    tag "${input.simpleName}___${compression_level}"
+    tag "${input.simpleName}___${compression_level}___${version}"
 
     input:
-        tuple path(input), val(compression_level)
-        // path input              // gz-compressed FASTQ file
-        // val compression_level   // ZSTD compression level
+        tuple path(phredsort_bin), val(version), path(input), val(compression_level)
+        // path phredsort_bin      // path to the phredsort binary for this run
+        // val  version            // version label derived from the binary name
+        // path input              // FASTQ file
+        // val  compression_level  // ZSTD compression level
 
     output:
         path "done"
 
     script:
     """
-    echo "stdin-mode with ZSTD compression level ${compression_level}"
-    zcat ${input} \
-      | phredsort --in - --out - --compress ${compression_level} > /dev/null
+    echo -e "Input: ${input}"
+    echo -e "ZSTD compression level: ${compression_level}"
+    echo -e "Phredsort version: ${version}"
+
+    ${phredsort_bin} \
+      --in ${input} \
+      --out - \
+      --compress ${compression_level} \
+    > /dev/null
+    
     touch done
     """
 }
