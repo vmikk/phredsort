@@ -86,10 +86,29 @@ workflow {
     // ch_fastq.view()
     // ch_zstd_compression.view()
 
-    // Cartesian product of compressed FASTQ files and ZSTD compression levels
-    ch_fastqgz
+    // Cartesian product of:
+    //   - phredsort binary (version)
+    //   - compressed FASTQ files
+    //   - ZSTD compression levels
+    ch_task_combinations = ch_fastqgz
+      .combine(ch_phredsort_bins)
+      .map { combo ->
+          /*
+           * `combine` flattens tuples, so each emitted item here is:
+           *   [ input, phredsort_bin, version ]
+           */
+          def (input, phredsort_bin, version) = combo
+          tuple(phredsort_bin, version, input)
+      }
       .combine(ch_zstd_compression)
-      .set { ch_zstd_combinations }
+      .map { combo ->
+          /*
+           * After combining with `ch_zstd_compression`, each item is:
+           *   [ phredsort_bin, version, input, compression_level ]
+           */
+          def (phredsort_bin, version, input, compression_level) = combo
+          tuple(phredsort_bin, version, input, compression_level)
+      }
 
     // ch_zstd_combinations.view()
 
