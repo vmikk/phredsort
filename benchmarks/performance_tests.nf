@@ -71,6 +71,16 @@ workflow {
     // ZSTD compression levels
     ch_zstd_compression = Channel.fromList(params.compression_levels)
 
+    // phredsort binaries (different versions to benchmark)
+    // Expected names in the `bin` directory: `phredsort`, `phredsort_<version>`, ...
+    ch_phredsort_bins = Channel
+        .fromPath("bin/phredsort*")
+        .map { bin_path ->
+            def name = bin_path.getName()
+            def version = (name == 'phredsort') ? 'current' : name.replaceFirst(/^phredsort_?/, '')
+            tuple(bin_path, version)
+        }
+
     // Preview channels
     // ch_fastqgz.view()
     // ch_fastq.view()
