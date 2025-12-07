@@ -62,44 +62,6 @@ process snappy_benchmark {
 }
 */
 
-// File-based benchmarks
-process file_benchmark_compressed {
-    
-    tag "${input.baseName}___filecompressed"
-
-    input:
-        path input
-
-    output:
-        path "done"
-
-    script:
-    """
-    echo "file-mode (compressed)"
-    phredsort --in ${input} --out - > /dev/null
-    touch done
-    """
-}
-
-// File-based benchmarks
-process file_benchmark_uncompressed {
-    
-    tag "${input.baseName}___file_uncompressed"
-
-    input:
-        path input
-
-    output:
-        path "done"
-
-    script:
-    """
-    echo "file-mode (uncompressed)"
-    phredsort --in ${input} --out - > /dev/null
-    touch done
-    """
-}
-
 workflow {
 
     // Channels with input files (repeated N times)
