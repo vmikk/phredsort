@@ -95,6 +95,8 @@ workflow {
     // ch_fastqgz.view()
     // ch_fastq.view()
     // ch_zstd_compression.view()
+    // ch_phredsort_bins.view()
+
 
     // Cartesian product of:
     //   - phredsort binary (version)
@@ -120,17 +122,17 @@ workflow {
           tuple(phredsort_bin, version, input, compression_level)
       }
 
-    // ch_zstd_combinations.view()
+    // ch_task_combinations.view()
 
-    // Run stdin-based ZSTD benchmarks
-    ch_zstd_combinations | zstd_benchmark
 
+    // Run benchmarks for all parameter combinations
+    ch_task_combinations | phredsorting
+
+    /*
     // Run stdin-based snappy benchmarks
-    ch_fastqgz | snappy_benchmark
+    // ch_fastqgz | snappy_benchmark
 
-    // Run file-based benchmarks
-    ch_fastqgz | file_benchmark_compressed
-    ch_fastq   | file_benchmark_uncompressed
+    */
 }
 
 
