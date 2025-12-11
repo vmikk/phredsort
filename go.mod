@@ -4,11 +4,11 @@ go 1.25.0
 
 require (
 	github.com/fatih/color v1.18.0
-	github.com/klauspost/compress v1.18.1
+	github.com/klauspost/compress v1.18.2
 	github.com/maruel/natural v1.2.1
 	github.com/shenwei356/bio v0.13.9
 	github.com/shenwei356/xopen v0.3.2
-	github.com/spf13/cobra v1.10.1
+	github.com/spf13/cobra v1.10.2
 )
 
 require (
