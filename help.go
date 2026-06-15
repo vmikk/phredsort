@@ -20,6 +20,7 @@ func helpFunc(cmd *cobra.Command, args []string) {
   Sort FASTA/FASTQ sequences using pre-computed quality scores stored
   directly in sequence headers. Supports both space-separated
   (">seq1 maxee=2") and semicolon-separated (">seq1;maxee=2") formats.
+  Equal metric values are tie-broken by natural sequence ID order.
 
 %s
   %s
