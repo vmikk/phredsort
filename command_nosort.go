@@ -106,7 +106,12 @@ func runNoSort(
 	if err != nil {
 		return fmt.Errorf("error creating reader: %v", err)
 	}
-	defer reader.Close()
+	closeReader := true
+	defer func() {
+		if closeReader {
+			reader.Close()
+		}
+	}()
 
 	outfh, err := xopen.Wopen(outFile)
 	if err != nil {
@@ -121,6 +126,10 @@ func runNoSort(
 		}
 		if err != nil {
 			return fmt.Errorf("error reading record: %v", err)
+		}
+		if !reader.IsFastq {
+			closeReader = false
+			return fmt.Errorf(computedQualityFastqError)
 		}
 
 		quality := calculateQuality(record, metric, minPhred)
