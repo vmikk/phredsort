@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/maruel/natural"
 	"github.com/shenwei356/bio/seqio/fastx"
 	"github.com/shenwei356/xopen"
 	"github.com/spf13/cobra"
@@ -26,9 +25,9 @@ var (
 // HeaderSortIndex is a memory-efficient struct for sorting pre-computed headers.
 // Uses index-based approach to minimize per-record memory overhead.
 type HeaderSortIndex struct {
-	Index   int32   // Position in records slice
-	Quality float32 // Parsed quality value from header
-	Size    int32   // Parsed size value from header (0 if not present)
+	Index   int     // Position in records slice
+	Quality float64 // Parsed quality value from header
+	Size    int     // Parsed size value from header (0 if not present)
 	HasSize bool    // Whether size was present in header
 }
 
@@ -57,34 +56,25 @@ func (list *HeaderSortIndexList) Swap(i, j int) {
 
 func (list *HeaderSortIndexList) Less(i, j int) bool {
 	qi, qj := list.items[i].Quality, list.items[j].Quality
+	idI := list.ids[list.items[i].Index]
+	idJ := list.ids[list.items[j].Index]
 
 	// Primary sort by quality
 	if qi != qj {
-		var result bool
-		if list.metric == MaxEE || list.metric == Meep || list.metric == LQCount || list.metric == LQPercent {
-			result = qi < qj
-		} else {
-			result = qi > qj
-		}
-		if list.ascending {
-			return !result
-		}
-		return result
-	}
-
-	// Secondary sort by size (if both have size)
-	if list.items[i].HasSize && list.items[j].HasSize {
-		si, sj := list.items[i].Size, list.items[j].Size
-		if si != sj {
+		if metricLowerIsBetter(list.metric) {
 			if list.ascending {
-				return si < sj
+				return qi > qj
 			}
-			return si > sj
+			return qi < qj
 		}
+
+		if list.ascending {
+			return qi < qj
+		}
+		return qi > qj
 	}
 
-	// Tertiary sort by ID using natural ordering
-	return natural.Less(list.ids[list.items[i].Index], list.ids[list.items[j].Index])
+	return naturalNameLess(idI, idJ)
 }
 
 // Items returns the underlying items slice
@@ -107,7 +97,7 @@ type PreSortRecord struct {
 // parseHeaderInfo extracts quality metric, size, and ID from a record header.
 // Returns the parsed values for use with index-based sorting.
 // This is a more efficient version that doesn't allocate a full PreSortRecord.
-func parseHeaderInfo(header string, metric QualityMetric) (id string, quality float32, size int32, hasQual bool, hasSize bool) {
+func parseHeaderInfo(header string, metric QualityMetric) (id string, quality float64, size int, hasQual bool, hasSize bool) {
 	parts := strings.SplitN(header, " ", 2)
 	id = parts[0]
 	if strings.HasPrefix(id, ">") || strings.HasPrefix(id, "@") {
@@ -117,7 +107,7 @@ func parseHeaderInfo(header string, metric QualityMetric) (id string, quality fl
 	// Try to find size annotation
 	if sizeMatch := sizeRe.FindStringSubmatch(header); sizeMatch != nil {
 		if s, err := strconv.Atoi(sizeMatch[1]); err == nil {
-			size = int32(s)
+			size = s
 			hasSize = true
 		}
 	}
@@ -152,8 +142,8 @@ func parseHeaderInfo(header string, metric QualityMetric) (id string, quality fl
 	}
 
 	if found {
-		if q, err := strconv.ParseFloat(qualityStr, 32); err == nil {
-			quality = float32(q)
+		if q, err := strconv.ParseFloat(qualityStr, 64); err == nil {
+			quality = q
 			hasQual = true
 		}
 	}
@@ -195,7 +185,7 @@ func parsePreSortRecord(record *fastx.Record, metric QualityMetric) (*PreSortRec
 // It supports both space-separated (">seq1 maxee=2") and semicolon-separated
 // (">seq1;maxee=2") header formats
 //
-// Secondary sorting is performed by size annotation (if present) and sequence ID
+// Equal metric values are tie-broken by sequence ID using natural ordering
 func HeaderSortCommand() *cobra.Command {
 	var (
 		inFile        string
@@ -211,8 +201,8 @@ func HeaderSortCommand() *cobra.Command {
 		Short: "Sort FASTA/FASTQ sequences using pre-computed quality scores from headers",
 		Long: `Sort sequences using pre-computed quality scores stored in sequence headers.
 Supports both FASTA and FASTQ formats with space-separated (">seq1 maxee=2") or 
-semicolon-separated (">seq1;maxee=2") quality annotations. Secondary sorting is done 
-by size annotation (if present, e.g., "size=123") and sequence ID.`,
+semicolon-separated (">seq1;maxee=2") quality annotations. Equal metric values
+are tie-broken by sequence ID using natural ordering.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Validate metric flag
 			qualityMetric, err := validateMetric(metric)
@@ -274,14 +264,11 @@ func runPresort(inFile, outFile string, metric QualityMetric, ascending bool, mi
 	ids := make([]string, 0, 10000)
 	sortIndices := make([]HeaderSortIndex, 0, 10000)
 
-	minQual32 := float32(minQual)
-	maxQual32 := float32(maxQual)
-
 	// Use ChunkChan for asynchronous reading with reasonable buffer sizes
 	bufferSize := 100 // Number of chunks to buffer
 	chunkSize := 1000 // Records per chunk
 
-	var idx int32 = 0
+	var idx int
 	for chunk := range reader.ChunkChan(bufferSize, chunkSize) {
 		if chunk.Err != nil {
 			return fmt.Errorf("error reading chunk: %v", chunk.Err)
@@ -296,7 +283,7 @@ func runPresort(inFile, outFile string, metric QualityMetric, ascending bool, mi
 			}
 
 			// Apply quality filters
-			if quality >= minQual32 && quality <= maxQual32 {
+			if quality >= minQual && quality <= maxQual {
 				// Store record and add to sort indices
 				records = append(records, record) // ChunkChan already provides copies
 				ids = append(ids, id)
