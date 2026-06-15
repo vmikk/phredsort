@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"math/bits"
 	"os"
 	"sort"
 	"sync"
@@ -57,54 +58,160 @@ func putDecompBuffer(b *[]byte) {
 	decompBufferPool.Put(b)
 }
 
-// CompactStorage provides arena-style storage for compressed FASTQ records.
-// Instead of allocating separate []byte slices for each compressed record,
-// all compressed data is stored in a single contiguous buffer with offsets.
-// This reduces memory overhead from ~24 bytes per slice header to ~8 bytes per record.
-type CompactStorage struct {
-	data    []byte   // Single contiguous buffer for all compressed data
-	offsets []uint32 // Start offset for each record
-	lengths []uint32 // Length of each compressed record
+const (
+	defaultChunkSize          = 16 * 1024 * 1024 // 16 MiB should be a balance between copies and locality
+	warningThresholdBytes     = 4 * 1024 * 1024 * 1024
+	computedQualityFastqError = "computed quality sorting requires FASTQ input with quality scores; use headersort for FASTA with precomputed metrics"
+)
+
+type storageChunk struct {
+	data  []byte
+	used  int
+	start uint64
 }
 
-// NewCompactStorage creates a new CompactStorage with pre-allocated capacity
-func NewCompactStorage(estimatedRecords int, estimatedDataSize int) *CompactStorage {
-	return &CompactStorage{
-		data:    make([]byte, 0, estimatedDataSize),
-		offsets: make([]uint32, 0, estimatedRecords),
-		lengths: make([]uint32, 0, estimatedRecords),
+// ChunkedStorage keeps compressed FASTQ records in fixed-size chunks
+// Record offsets are tracked in uint64 to safely support multi-gigabyte datasets without re-copying old data
+type ChunkedStorage struct {
+	chunks       []*storageChunk
+	offsets      []uint64
+	lengths      []uint64
+	chunkSize    int
+	currentChunk *storageChunk
+	totalSize    uint64
+	warned       bool
+}
+
+// NewChunkedStorage reserved metadata for the expected number of records.
+func NewChunkedStorage(estimatedRecords int, chunkSize int) *ChunkedStorage {
+	if chunkSize <= 0 {
+		chunkSize = defaultChunkSize
+	}
+	return &ChunkedStorage{
+		chunks:    make([]*storageChunk, 0, 4),
+		offsets:   make([]uint64, 0, estimatedRecords),
+		lengths:   make([]uint64, 0, estimatedRecords),
+		chunkSize: chunkSize,
 	}
 }
 
-// Append adds compressed data to the storage and returns the index
-func (s *CompactStorage) Append(compressed []byte) int {
+// Append stores compressed data and returns its index
+func (s *ChunkedStorage) Append(compressed []byte) int {
+	length := len(compressed)
+	reserveLength := length
+	if reserveLength == 0 {
+		reserveLength = 1
+	}
+	s.ensureCapacity(reserveLength)
+	chunk := s.currentChunk
+	copy(chunk.data[chunk.used:chunk.used+length], compressed)
+
 	idx := len(s.offsets)
-	s.offsets = append(s.offsets, uint32(len(s.data)))
-	s.lengths = append(s.lengths, uint32(len(compressed)))
-	s.data = append(s.data, compressed...)
+	start := s.totalSize
+
+	s.offsets = append(s.offsets, start)
+	s.lengths = append(s.lengths, uint64(length))
+	chunk.used += reserveLength
+	s.totalSize += uint64(reserveLength)
+	s.maybeWarn()
+
 	return idx
 }
 
-// Get retrieves compressed data at the given index
-func (s *CompactStorage) Get(idx int) []byte {
-	start := s.offsets[idx]
-	return s.data[start : start+s.lengths[idx]]
+// Get returns compressed data view for index
+func (s *ChunkedStorage) Get(idx int) []byte {
+	offset := s.offsets[idx]
+	length := s.lengths[idx]
+	chunkIdx := s.findChunk(offset)
+	chunk := s.chunks[chunkIdx]
+	relative := offset - chunk.start
+	return chunk.data[int(relative):int(relative+length)]
 }
 
-// Len returns the number of stored records
-func (s *CompactStorage) Len() int {
+func (s *ChunkedStorage) Len() int {
 	return len(s.offsets)
 }
 
+func (s *ChunkedStorage) ensureCapacity(length int) {
+	if length <= 0 {
+		length = 1
+	}
+	if s.currentChunk != nil && len(s.currentChunk.data)-s.currentChunk.used >= length {
+		return
+	}
 
-// runDefaultCommand is the main entry point for the default sort command.
+	newSize := s.chunkSize
+	if length > newSize {
+		newSize = nextPowerOfTwo(length)
+	}
+
+	if s.totalSize+uint64(newSize) < s.totalSize {
+		fmt.Fprint(os.Stderr, red("Error: compressed data exceeds supported capacity\n"))
+		exitFunc(1)
+	}
+
+	chunk := &storageChunk{
+		data:  make([]byte, newSize),
+		used:  0,
+		start: s.totalSize,
+	}
+	s.chunks = append(s.chunks, chunk)
+	s.currentChunk = chunk
+}
+
+func (s *ChunkedStorage) findChunk(offset uint64) int {
+	i := sort.Search(len(s.chunks), func(i int) bool {
+		chunk := s.chunks[i]
+		return offset < chunk.start+uint64(chunk.used)
+	})
+	if i == len(s.chunks) {
+		fmt.Fprint(os.Stderr, red("Error: chunk lookup failed\n"))
+		exitFunc(1)
+	}
+	return i
+}
+
+func (s *ChunkedStorage) maybeWarn() {
+	if s.warned {
+		return
+	}
+	if s.totalSize >= warningThresholdBytes {
+		fmt.Fprint(os.Stderr, yellow("Warning: compressed data exceeded 4 GiB; memory usage may grow\n"))
+		s.warned = true
+	}
+}
+
+func nextPowerOfTwo(v int) int {
+	if v <= 1 {
+		return 1
+	}
+	return 1 << uint(bits.Len(uint(v-1)))
+}
+
+func zstdEncodeCapacity(inputLen int) int {
+	if inputLen <= 0 {
+		return 64
+	}
+	return nextPowerOfTwo(inputLen + inputLen/8 + 64)
+}
+
+func exitIfNotFastq(reader *fastx.Reader, closeReader *bool) {
+	if reader.IsFastq {
+		return
+	}
+	*closeReader = false
+	fmt.Fprintln(os.Stderr, red("Error: "+computedQualityFastqError))
+	exitFunc(1)
+}
+
+// runDefaultCommand is the main entry point for the default sort command
 // It handles flag validation, metric parsing, and delegates to sortRecords
-// for the actual sorting work.
+// for the actual sorting work
 //
-// Uses a single-pass approach that reads all records into memory, calculates
-// quality scores, sorts, and writes output. This unified approach works for
-// both stdin ("-") and file inputs, since compressed FASTQ files don't support
-// random access anyway.
+// Uses a single-pass approach that reads all records into memory,
+// calculates quality scores, sorts, and writes output.
+// This unified approach works for both stdin ("-") and file inputs,
+// since compressed FASTQ files don't support random access anyway
 func runDefaultCommand(cmd *cobra.Command, args []string) {
 	// Check version flag
 	if version {
@@ -137,11 +244,11 @@ func runDefaultCommand(cmd *cobra.Command, args []string) {
 }
 
 // sortRecords reads FASTQ records from input, calculates quality metrics, sorts them,
-// and writes the sorted output. This unified function works for both file and stdin input.
+// and writes the sorted output. This unified function works for both file and stdin input
 //
 // Memory optimization: Uses index-based sorting with compact storage to minimize
 // memory overhead. Instead of storing names multiple times (in map keys and sort structs),
-// names are stored once in a slice and referenced by integer indices.
+// names are stored once in a slice and referenced by integer indices
 //
 // When compLevel > 0, records are compressed using ZSTD to reduce memory usage
 // When compLevel == 0, records are stored uncompressed (faster but uses more memory)
@@ -162,7 +269,12 @@ func sortRecords(inFile, outFile string, ascending bool, metric QualityMetric, c
 		fmt.Fprintf(os.Stderr, red("Error creating reader: %v\n"), err)
 		exitFunc(1)
 	}
-	defer reader.Close()
+	closeReader := true
+	defer func() {
+		if closeReader {
+			reader.Close()
+		}
+	}()
 
 	// Create output file handle at the beginning
 	outfh, err := xopen.Wopen(outFile)
@@ -173,15 +285,15 @@ func sortRecords(inFile, outFile string, ascending bool, metric QualityMetric, c
 	defer outfh.Close()
 
 	if compLevel > 0 {
-		sortCompressed(reader, outfh, ascending, metric, compLevel, headerMetrics, minPhred, minQualFilter, maxQualFilter)
+		sortCompressed(reader, outfh, ascending, metric, compLevel, headerMetrics, minPhred, minQualFilter, maxQualFilter, &closeReader)
 	} else {
-		sortUncompressed(reader, outfh, ascending, metric, headerMetrics, minPhred, minQualFilter, maxQualFilter)
+		sortUncompressed(reader, outfh, ascending, metric, headerMetrics, minPhred, minQualFilter, maxQualFilter, &closeReader)
 	}
 }
 
-// sortCompressed handles sorting with ZSTD compression enabled.
-// Uses compact arena storage to minimize per-record memory overhead.
-func sortCompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool, metric QualityMetric, compLevel int, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64) {
+// sortCompressed handles sorting with ZSTD compression enabled
+// Uses chunked storage to avoid monolithic compressed-buffer reallocations
+func sortCompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool, metric QualityMetric, compLevel int, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64, closeReader *bool) {
 	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(compLevel)))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, red("Error creating ZSTD encoder: %v\n"), err)
@@ -196,18 +308,19 @@ func sortCompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool, m
 	}
 	defer decoder.Close()
 
-	// Memory-efficient storage using arena and index-based sorting
-	// Estimate initial capacity (will grow as needed)
-	storage := NewCompactStorage(10000, 1024*1024) // 10K records, 1MB data
+	// Memory-efficient storage using chunks and index-based sorting
+	// Estimate initial metadata capacity (will grow as needed)
+	storage := NewChunkedStorage(10000, 0)
 	names := make([]string, 0, 10000)
 	qualityScores := make([]QualityIndex, 0, 10000)
 
 	// Get a reusable buffer for compression
 	compBuf := getSmallBuffer()
 	defer putSmallBuffer(compBuf)
+	encBuf := getSmallBuffer()
+	defer putSmallBuffer(encBuf)
 
 	// Reading records
-	var idx int32 = 0
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -217,28 +330,37 @@ func sortCompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool, m
 			fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 			exitFunc(1)
 		}
+		exitIfNotFastq(reader, closeReader)
 
 		name := string(record.Name)
 		avgQual := calculateQuality(record, metric, minPhred)
+		if avgQual < minQualFilter || avgQual > maxQualFilter {
+			continue
+		}
 
 		// Compress sequence and quality scores together using pooled buffer
 		dataLen := len(record.Seq.Seq) + len(record.Seq.Qual)
 		if cap(*compBuf) < dataLen {
-			*compBuf = make([]byte, 0, dataLen*2)
+			*compBuf = make([]byte, 0, nextPowerOfTwo(dataLen))
 		}
-		*compBuf = (*compBuf)[:0]
-		*compBuf = append(*compBuf, record.Seq.Seq...)
-		*compBuf = append(*compBuf, record.Seq.Qual...)
+		buf := (*compBuf)[:0]
+		buf = append(buf, record.Seq.Seq...)
+		buf = append(buf, record.Seq.Qual...)
+		*compBuf = buf
 
-		compressed := encoder.EncodeAll(*compBuf, make([]byte, 0, len(*compBuf)/2))
+		encCap := zstdEncodeCapacity(len(buf))
+		if cap(*encBuf) < encCap {
+			*encBuf = make([]byte, 0, encCap)
+		}
+		compressed := encoder.EncodeAll(buf, (*encBuf)[:0])
 		storage.Append(compressed)
+		*encBuf = compressed
 
 		names = append(names, name)
 		qualityScores = append(qualityScores, QualityIndex{
-			Index: idx,
-			Value: float32(avgQual),
+			Index: len(names) - 1,
+			Value: avgQual,
 		})
-		idx++
 	}
 
 	// Sort records using index-based sorting
@@ -259,6 +381,7 @@ func sortCompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool, m
 			fmt.Fprintf(os.Stderr, red("Error decompressing record: %v\n"), err)
 			exitFunc(1)
 		}
+		*decompBuf = decompressed
 
 		seqLen := len(decompressed) / 2
 		record := &fastx.Record{
@@ -272,16 +395,15 @@ func sortCompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool, m
 	}
 }
 
-// sortUncompressed handles sorting without compression.
-// Uses index-based sorting with a slice instead of a map for record storage.
-func sortUncompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool, metric QualityMetric, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64) {
+// sortUncompressed handles sorting without compression
+// Uses index-based sorting with a slice instead of a map for record storage
+func sortUncompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool, metric QualityMetric, headerMetrics []HeaderMetric, minPhred int, minQualFilter float64, maxQualFilter float64, closeReader *bool) {
 	// Use slices instead of maps for more efficient memory layout
 	records := make([]*fastx.Record, 0, 10000)
 	names := make([]string, 0, 10000)
 	qualityScores := make([]QualityIndex, 0, 10000)
 
 	// Read all records
-	var idx int32 = 0
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -291,18 +413,21 @@ func sortUncompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool,
 			fmt.Fprintf(os.Stderr, red("Error reading record: %v\n"), err)
 			exitFunc(1)
 		}
+		exitIfNotFastq(reader, closeReader)
 
 		name := string(record.Name)
 		avgQual := calculateQuality(record, metric, minPhred)
+		if avgQual < minQualFilter || avgQual > maxQualFilter {
+			continue
+		}
 
 		// Clone and store in slice (indexed access)
 		records = append(records, record.Clone())
 		names = append(names, name)
 		qualityScores = append(qualityScores, QualityIndex{
-			Index: idx,
-			Value: float32(avgQual),
+			Index: len(records) - 1,
+			Value: avgQual,
 		})
-		idx++
 	}
 
 	// Sort records using index-based sorting
@@ -315,4 +440,3 @@ func sortUncompressed(reader *fastx.Reader, outfh *xopen.Writer, ascending bool,
 		writeRecord(outfh, record, float64(qi.Value), headerMetrics, metric, minPhred, minQualFilter, maxQualFilter)
 	}
 }
-
