@@ -103,37 +103,51 @@ func (list QualityFloatList) Len() int { return len(list.items) }
 func (list QualityFloatList) Swap(i, j int) {
 	list.items[i], list.items[j] = list.items[j], list.items[i]
 }
+
+func metricLowerIsBetter(metric QualityMetric) bool {
+	return metric == MaxEE || metric == Meep || metric == LQCount || metric == LQPercent
+}
+
+func naturalNameLess(a, b string) bool {
+	if a == b {
+		return false
+	}
+	return natural.Less(a, b)
+}
+
+func qualityLess(vi, vj float64, nameI, nameJ string, ascending bool, metric QualityMetric) bool {
+	if vi != vj {
+		if metricLowerIsBetter(metric) {
+			if ascending {
+				return vi > vj
+			}
+			return vi < vj
+		}
+
+		if ascending {
+			return vi < vj
+		}
+		return vi > vj
+	}
+
+	return naturalNameLess(nameI, nameJ)
+}
+
 // Less implements sort.Interface. It determines the sort order based on the metric type:
 // - For AvgPhred (higher is better): default order is highest to lowest
 // - For MaxEE, Meep, LQCount, LQPercent (lower is better): default order is lowest to highest
-// - The ascending flag flips the default ordering
-// - Secondary sort is by name using natural ordering (e.g., seq1, seq2, seq10)
+// - The ascending flag flips only the primary metric ordering
+// - Secondary sort is always by name using natural ordering (e.g., seq1, seq2, seq10)
 func (list QualityFloatList) Less(i, j int) bool {
 	metric := list.getMetricFromValue()
-
-	// Compare values based on metric type
-	var result bool
-	if metric == MaxEE || metric == Meep || metric == LQCount || metric == LQPercent {
-		// For these metrics, higher values indicate lower quality
-		if list.items[i].Value != list.items[j].Value {
-			result = list.items[i].Value < list.items[j].Value
-		} else {
-			result = natural.Less(list.items[i].Name, list.items[j].Name)
-		}
-	} else {
-		// For other metrics (e.g., AvgPhred), higher values indicate better quality
-		if list.items[i].Value != list.items[j].Value {
-			result = list.items[i].Value > list.items[j].Value
-		} else {
-			result = natural.Less(list.items[i].Name, list.items[j].Name)
-		}
-	}
-
-	// Flip the result if we want ascending order
-	if list.ascending {
-		return !result
-	}
-	return result
+	return qualityLess(
+		list.items[i].Value,
+		list.items[j].Value,
+		list.items[i].Name,
+		list.items[j].Name,
+		list.ascending,
+		metric,
+	)
 }
 
 // Helper function to get metric from QualityFloatList
@@ -150,11 +164,9 @@ func (list QualityFloatList) Items() []QualityFloat {
 }
 
 // QualityIndex is a memory-efficient alternative to QualityFloat for sorting.
-// Uses int32 index (4 bytes) + float32 value (4 bytes) = 8 bytes total
-// compared to QualityFloat which uses ~50+ bytes due to string storage
 type QualityIndex struct {
-	Index int32   // Position in records slice
-	Value float32 // Quality score (float32 provides sufficient precision)
+	Index int     // Position in records slice
+	Value float64 // Quality score
 }
 
 // QualityIndexList implements sort.Interface for memory-efficient sorting.
@@ -184,29 +196,9 @@ func (list *QualityIndexList) Swap(i, j int) {
 // Less implements sort.Interface with the same semantics as QualityFloatList
 func (list *QualityIndexList) Less(i, j int) bool {
 	vi, vj := list.items[i].Value, list.items[j].Value
-
-	var result bool
-	if list.metric == MaxEE || list.metric == Meep || list.metric == LQCount || list.metric == LQPercent {
-		// For these metrics, lower values indicate better quality
-		if vi != vj {
-			result = vi < vj
-		} else {
-			// Tie-break using natural sort on names
-			result = natural.Less(list.names[list.items[i].Index], list.names[list.items[j].Index])
-		}
-	} else {
-		// For AvgPhred and other metrics, higher values indicate better quality
-		if vi != vj {
-			result = vi > vj
-		} else {
-			result = natural.Less(list.names[list.items[i].Index], list.names[list.items[j].Index])
-		}
-	}
-
-	if list.ascending {
-		return !result
-	}
-	return result
+	nameI := list.names[list.items[i].Index]
+	nameJ := list.names[list.items[j].Index]
+	return qualityLess(vi, vj, nameI, nameJ, list.ascending, list.metric)
 }
 
 // Items returns the underlying items slice
