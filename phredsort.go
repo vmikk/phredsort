@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	VERSION           = "1.5.1"
+	VERSION           = "1.6.0"
 	PHRED_OFFSET      = 33
 	DEFAULT_MIN_PHRED = 15 // min Phred score threshold for `lqcount` and `lqpercent` metrics
 )
