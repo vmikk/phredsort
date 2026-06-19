@@ -3,7 +3,7 @@
 [![DOI](https://zenodo.org/badge/883305374.svg)](https://doi.org/10.5281/zenodo.14395125)
 [![codecov](https://codecov.io/gh/vmikk/phredsort/graph/badge.svg?token=RPMFI9XT67)](https://codecov.io/gh/vmikk/phredsort)
 
-`phredsort` is a command-line tool for sorting sequences in FASTQ files by their quality scores.
+`phredsort` is a command-line tool for sorting FASTQ reads by quality metrics.In is also possible to sort FASTA inputs when quality metrics are already present in sequence headers (using `headersort` subcommand).
 
 ## Usage
 
